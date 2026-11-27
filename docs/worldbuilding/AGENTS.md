@@ -1,0 +1,2 @@
+# Worldbuilding instructions
+Start with [index](README.md) and [vision](../vision.md). Load relevant domain pages only. Read [decisions](../decisions/README.md) for authority. Distinguish user-endorsed proposals from assistant-generated possibilities. Never silently promote speculation to canon. Preserve intentional mysteries; capture new ideas in ideas/ and link them from its index. Do not force every lore concept into a mechanic. Significant creative acceptance belongs to human collaborators.
