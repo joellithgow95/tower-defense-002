@@ -37,3 +37,5 @@ Start with [your first change](docs/first-change.md). You don't need to know how
 - [`docs/plan.md`](docs/plan.md): what we're building, in order
 - [`docs/design.md`](docs/design.md): the game's rules and ideas
 - [`AGENTS.md`](AGENTS.md): rules for coding agents (and people)
+
+- [`docs/README.md`](docs/README.md): creative vision, worldbuilding and decision index
