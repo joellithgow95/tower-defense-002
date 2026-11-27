@@ -1,0 +1,4 @@
+{
+  "soldier": { "label": "Soldier", "health": 6, "speed": 1500, "damage": 1, "bounty": 2 },
+  "knight": { "label": "Knight", "health": 30, "speed": 875, "damage": 3, "bounty": 4 }
+}

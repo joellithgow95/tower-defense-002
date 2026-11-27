@@ -1,0 +1,40 @@
+/** Plain-English checks for the files in content/, so a typo says what to fix. */
+import type { Config } from './types';
+
+export function problems({ content, map, rules }: Config): string[] {
+  const out: string[] = [];
+  const whole = (where: string, obj: object, keys: string[]) => {
+    for (const k of keys) {
+      const v = (obj as Record<string, unknown>)[k];
+      if (!Number.isInteger(v) || (v as number) <= 0) out.push(`${where}: "${k}" must be a whole number above 0 (it is ${JSON.stringify(v)}).`);
+    }
+  };
+  for (const [id, t] of Object.entries(content.troops)) {
+    const where = `content/troops.json → ${id}`;
+    if (!t.label) out.push(`${where}: give it a "label", the name players see.`);
+    whole(where, t, ['health', 'speed', 'damage', 'bounty']);
+    if (t.speed >= 60000) out.push(`${where}: "speed" is too fast; keep it under 60000.`);
+  }
+  for (const [id, t] of Object.entries(content.towers)) {
+    const where = `content/towers.json → ${id}`;
+    if (!t.label) out.push(`${where}: give it a "label", the name players see.`);
+    if (t.kind === 'shooter') whole(where, t, ['cost', 'range', 'fireTicks', 'damage']);
+    else if (t.kind === 'spawner') {
+      whole(where, t, ['cost', 'spawnTicks']);
+      if (!content.troops[t.troop]) out.push(`${where}: there is no troop called "${t.troop}" in content/troops.json.`);
+    } else out.push(`${where}: "kind" must be "shooter" or "spawner".`);
+  }
+  whole('content/rules.json', rules, ['startingGold', 'goldPerIncome', 'incomeTicks', 'baseHealth', 'refundPercent', 'demolishTicks']);
+
+  const where = `map "${map.name}"`;
+  const width = map.rows[0]?.length ?? 0;
+  if (!width || map.rows.some((r) => r.length !== width)) out.push(`${where}: every row must be the same length.`);
+  const flat = map.rows.join('');
+  if (/[^.#12]/.test(flat)) out.push(`${where}: use only . (grass), # (rock), 1 and 2 (the two bases).`);
+  for (const base of ['1', '2']) if (flat.split(base).length !== 2) out.push(`${where}: there must be exactly one "${base}".`);
+  for (const t of map.startingTowers) {
+    if (!content.towers[t.id]) out.push(`${where}: there is no tower called "${t.id}".`);
+    if (map.rows[t.y]?.[t.x] !== '.') out.push(`${where}: the starting ${t.id} at x ${t.x}, y ${t.y} must be on grass.`);
+  }
+  return out;
+}

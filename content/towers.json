@@ -1,0 +1,5 @@
+{
+  "archer": { "label": "Archer Tower", "kind": "shooter", "cost": 20, "range": 2500, "fireTicks": 48, "damage": 2 },
+  "barracks": { "label": "Barracks", "kind": "spawner", "cost": 40, "troop": "soldier", "spawnTicks": 240 },
+  "knight_hall": { "label": "Knight Hall", "kind": "spawner", "cost": 70, "troop": "knight", "spawnTicks": 480 }
+}

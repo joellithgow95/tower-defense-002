@@ -1,0 +1,28 @@
+{
+  "name": "tower-defense-002",
+  "version": "0.1.0",
+  "description": "A low-poly fantasy maze tower defense",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run test && npm run build",
+    "sim": "vite-node scripts/sim.ts",
+    "replay": "vite-node scripts/replay.ts"
+  },
+  "dependencies": {
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.11",
+    "@types/three": "^0.187.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.4.0",
+    "vite-node": "^6.0.0",
+    "vitest": "^5.1.2"
+  },
+  "private": true,
+  "type": "module"
+}

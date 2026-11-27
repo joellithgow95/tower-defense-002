@@ -1,0 +1,11 @@
+name: Bug report
+description: Something is broken or behaves strangely
+labels: [bug]
+body:
+  - type: textarea
+    attributes: { label: What happened?, description: What did you expect instead? }
+    validations: { required: true }
+  - type: textarea
+    attributes: { label: Bug report from the game, description: 'Press "Copy bug report" before restarting, then paste here. Screenshots can go in the box above.', render: json }
+  - type: input
+    attributes: { label: Computer and browser, placeholder: 'e.g. Windows, Chrome' }

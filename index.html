@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tower Defense 002</title>
+  <link rel="stylesheet" href="/src/game/style.css" />
+</head>
+<body>
+  <canvas id="board"></canvas>
+  <header>
+    <div class="side blue"><b>You</b><span>♥ <i id="hp0"></i></span><span>● <i id="gold"></i> gold</span></div>
+    <div id="message" role="status"></div>
+    <div class="side red"><b>Bot</b><span>♥ <i id="hp1"></i></span></div>
+  </header>
+  <footer>
+    <nav id="cards"></nav>
+    <nav><button id="sell">Sell <kbd>X</kbd></button><button id="pause">Pause <kbd>P</kbd></button><button id="restart">Restart <kbd>R</kbd></button><button id="report">Copy bug report</button></nav>
+  </footer>
+  <script type="module" src="/src/game/main.ts"></script>
+</body>
+</html>
