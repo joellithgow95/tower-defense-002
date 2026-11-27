@@ -37,3 +37,6 @@ Low-poly, flat-shaded, built in code from simple shapes. One cell is 1 unit. Kee
 
 ## Reference
 This is a rebuild of an earlier Godot prototype. `docs/design.md` records what carries over.
+
+## Creative documentation
+For worldbuilding, narrative or creative direction, start with `docs/README.md` and follow scoped `AGENTS.md` instructions. Proposed lore does not override existing game rules.
