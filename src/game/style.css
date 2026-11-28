@@ -20,3 +20,26 @@ button:hover { background: #3d4b6b; }
 button[aria-pressed="true"] { border-color: #ffd166; }
 button.poor { opacity: .55; }
 kbd { opacity: .65; font-size: 12px; margin-left: 4px; }
+#controller-help { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); padding: 5px 10px; border-radius: 8px; background: #10141ecc; text-align: center; font-size: 13px; }
+#controller-settings {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(480px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  padding: 20px;
+  border: 1px solid #465576;
+  border-radius: 12px;
+  background: #283247;
+  color: inherit;
+}
+#controller-settings::backdrop { background: #10141ebf; }
+#controller-settings h2 { margin-bottom: 6px; }
+#controller-settings p { margin-bottom: 8px; }
+#controller-settings p:empty { display: none; }
+#controller-bindings { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 6px; margin: 12px 0; }
+#controller-settings label, #controller-settings input, #controller-settings select { display: block; width: 100%; }
+#controller-settings output { float: right; }
+#controller-settings input, #controller-settings select { margin: 5px 0 12px; accent-color: #ffd166; }
+#controller-settings select { font: inherit; color: inherit; background: #323e58; padding: 6px; border: 1px solid #465576; border-radius: 6px; }
+#controller-settings :focus-visible, #controller-settings :focus { outline: 2px solid #ffd166; outline-offset: 2px; }

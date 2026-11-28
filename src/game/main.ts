@@ -5,6 +5,9 @@ import { Match, fingerprint } from '../core/match';
 import { TICKS_PER_SECOND, alive, checkBuild, enemies, players } from '../core/sim';
 import type { Action, Config, Player, Refusal, State } from '../core/types';
 import { problems } from '../core/validate';
+import { BUTTON_LABELS, SETTINGS_BUTTON } from './controller-preferences';
+import { createControllerSettings } from './controller-settings';
+import { createGamepadInput } from './gamepad';
 import { PLAYER_COLORS } from './models';
 import { createView } from './view';
 
@@ -19,6 +22,13 @@ for (const [id, mode] of Object.entries(modes)) {
 }
 
 const view = createView(canvas);
+const gamepad = createGamepadInput();
+const controllerHelp = $('controller-help');
+const settings = createControllerSettings(
+  $('controller-settings') as HTMLDialogElement,
+  $('controller-open') as HTMLButtonElement,
+  gamepad.suspend,
+);
 /** You are always player 0 here; everyone else is a bot. */
 const me: Player = 0;
 
@@ -26,8 +36,12 @@ let mode: Mode = 'duel', config: Config = modes.duel.config;
 let match: Match, bots: ((s: State, cfg: Config) => Action[])[] = [], paused = false, queued: Action[] = [];
 let target: Player = -1;
 let selected = Object.keys(modes.duel.config.content.towers)[0];
-let hover: { x: number; y: number } | null = null;
+type Cell = { x: number; y: number };
+let hover: Cell | null = null;
 let messageUntil = 0;
+let controllerActive = false;
+let cursor: Cell;
+let owed = 0;
 
 const reasons = (): Record<Refusal, string> => ({
   'game-over': 'The match is over. Press R to play again.',
@@ -90,7 +104,11 @@ function restart(next: Mode = mode) {
   const seed = Date.now();
   bots = players(match.state).filter((p) => p !== me).map((p) => createBot(p, seed + p));
   queued = [];
+  owed = 0;
   paused = false;
+  const { bases, width } = match.state;
+  cursor = { x: bases[me] % width, y: Math.floor(bases[me] / width) };
+  if (controllerActive) hover = cursor;
   target = -1;
   cycleTarget();
   view.reset(match.state);
@@ -115,37 +133,57 @@ const modeSelect = $('mode') as HTMLSelectElement;
 for (const [id, m] of Object.entries(modes)) modeSelect.append(new Option(m.label, id));
 modeSelect.onchange = () => { restart(modeSelect.value as Mode); modeSelect.blur(); };
 
-const sell = () => hover && queued.push({ type: 'sell', player: me, ...hover });
-const launch = () => target >= 0 && queued.push({ type: 'launch', player: me, target });
-const togglePause = () => { paused = !paused; say(paused ? 'Paused' : 'Go!', paused ? 1e6 : 1); };
+function build() {
+  if (hover && !paused) queued.push({ type: 'build', player: me, tower: selected, ...hover });
+}
+function sell() {
+  if (hover && !paused) queued.push({ type: 'sell', player: me, ...hover });
+}
+function launch() {
+  if (target >= 0 && !paused) queued.push({ type: 'launch', player: me, target });
+}
+function togglePause() {
+  if (match.state.winner !== null) return;
+  paused = !paused;
+  say(paused ? 'Paused' : 'Go!', paused ? 1e6 : 1);
+}
 $('pause').onclick = togglePause;
 $('restart').onclick = () => restart();
 $('sell').onclick = () => say('Point at one of your towers and press X.');
-$('launch').onclick = () => !paused && launch();
+$('launch').onclick = launch;
 $('report').onclick = async () => {
   const report = JSON.stringify({ ...match.replay(__BUILD__), fingerprint: fingerprint(match.state) });
   try { await navigator.clipboard.writeText(report); say('Bug report copied. Paste it into a new GitHub issue.', 5); }
   catch { prompt('Copy this bug report:', report); }
 };
 
-canvas.addEventListener('pointermove', (e) => (hover = view.cellAt(e.clientX, e.clientY)));
-canvas.addEventListener('pointerleave', () => (hover = null));
-canvas.addEventListener('pointerdown', (e) => {
+function point(e: PointerEvent) {
+  controllerActive = false;
   hover = view.cellAt(e.clientX, e.clientY);
-  if (e.button !== 0 || !hover || paused) return;
-  // Clicking an enemy castle aims at it; anywhere else, it builds.
+}
+
+/** Pointing at an enemy castle aims at it; anywhere else, it builds. */
+function buildOrAim() {
+  if (!hover || paused) return;
   const castle = match.state.bases.indexOf(hover.y * match.state.width + hover.x);
   if (castle >= 0 && foes(match.state).includes(castle)) target = castle;
-  else queued.push({ type: 'build', player: me, tower: selected, ...hover });
+  else build();
+}
+
+canvas.addEventListener('pointermove', point);
+canvas.addEventListener('pointerleave', () => { if (!controllerActive) hover = null; });
+canvas.addEventListener('pointerdown', (e) => {
+  point(e);
+  if (e.button === 0) buildOrAim();
 });
 addEventListener('keydown', (e) => {
-  if (e.metaKey || e.ctrlKey || e.altKey || e.target instanceof HTMLSelectElement) return;
+  if (settings.active || e.metaKey || e.ctrlKey || e.altKey || e.target instanceof HTMLSelectElement) return;
   const key = e.key.toLowerCase();
-  if (key === 'x' && !paused) sell();
-  if (key === ' ') { e.preventDefault(); if (!paused) launch(); }
+  if (key === 'x') sell();
+  if (key === ' ') { e.preventDefault(); launch(); }
   if (key === 't') cycleTarget();
-  if (key === 'p') togglePause();
-  if (key === 'r') restart();
+  if (key === 'p' && !e.repeat) togglePause();
+  if (key === 'r' && !e.repeat) restart();
   const card = cards[Number(key) - 1];
   if (card) selected = card.id;
 });
@@ -162,16 +200,93 @@ function winText(winner: number | 'draw') {
   return players(match.state).some((p) => p !== me && config.teams[p] === winner) ? 'Your team wins! Press R to play again.' : 'You win! Press R to play again.';
 }
 
+function availableGamepads() {
+  try { return navigator.getGamepads?.() ?? []; }
+  catch { return []; } // Gamepad access can be blocked in an embedded page.
+}
+
+function readController(now: number) {
+  const input = gamepad.poll(availableGamepads(), now, settings.preferences);
+  if (!input && controllerActive) {
+    controllerActive = false;
+    hover = null;
+    settings.cancelCapture();
+    if (!paused && match.state.winner === null) togglePause();
+    if (match.state.winner === null) say('Controller disconnected. Reconnect to resume, or press P.', 1e6);
+  }
+  controllerHelp.hidden = !input;
+  if (!input?.ready) {
+    controllerHelp.textContent = 'Release the controller buttons and center the stick.';
+    return;
+  }
+
+  if (settings.active) {
+    settings.handle(input.pressed, input.move);
+    return;
+  }
+  const { bindings } = settings.preferences;
+  const pressed = (button: number) => input.pressed.includes(button);
+  const ended = match.state.winner !== null;
+  const label = (button: number) => BUTTON_LABELS[button];
+  const towerButtons = [bindings.previous, bindings.next].map(label).join(' · ');
+  const help = ended
+    ? `${label(bindings.restart)}  Play again`
+    : paused
+      ? `${label(bindings.pause)}  Resume · ${label(bindings.restart)}  Restart`
+      : `Stick / D-pad  Move · ${towerButtons}  Tower · ${label(bindings.build)}  Build or aim · ${label(bindings.sell)}  Sell · ${label(bindings.launch)}  Launch · ${label(bindings.pause)}  Pause`;
+  const helpWithSettings = `${help} · View / Create  Settings`;
+  if (controllerHelp.textContent !== helpWithSettings) controllerHelp.textContent = helpWithSettings;
+
+  if (pressed(SETTINGS_BUTTON)) {
+    settings.open();
+    return;
+  }
+  const tower = Number(pressed(bindings.next)) - Number(pressed(bindings.previous));
+  if (!input.move && !input.pressed.some((button) => Object.values(bindings).includes(button))) return;
+  if (!controllerActive && hover) cursor = hover;
+  controllerActive = true;
+  hover = cursor;
+  if (pressed(bindings.restart) && (paused || ended)) {
+    restart();
+    return;
+  }
+  if (pressed(bindings.pause)) {
+    togglePause();
+    return;
+  }
+  if (paused || ended) return;
+
+  if (input.move) {
+    const { width, height } = match.state;
+    cursor = {
+      x: Math.min(width - 1, Math.max(0, cursor.x + input.move.x)),
+      y: Math.min(height - 1, Math.max(0, cursor.y + input.move.y)),
+    };
+    hover = cursor;
+  }
+  if (tower) {
+    const index = cards.findIndex((card) => card.id === selected);
+    selected = cards[(index + tower + cards.length) % cards.length].id;
+  }
+  if (pressed(bindings.launch)) launch();
+  if (pressed(bindings.sell)) sell();
+  else if (pressed(bindings.build)) buildOrAim();
+}
+
+addEventListener('blur', gamepad.suspend);
+document.addEventListener('visibilitychange', gamepad.suspend);
 try { const saved = localStorage.getItem('mode'); if (saved && saved in modes) mode = saved as Mode; } catch { /* use the default */ }
 restart();
 const TICK = 1 / TICKS_PER_SECOND;
-let last = performance.now(), owed = 0;
+let last = performance.now();
 function loop(now: number) {
   // The game advances in fixed ticks however fast the screen draws. Time spent in a hidden tab is dropped.
   const seconds = Math.min((now - last) / 1000, 0.25);
   last = now;
-  if (!paused) owed += seconds;
-  while (owed >= TICK) {
+  if (!document.hidden && document.hasFocus()) readController(now);
+  const suspended = paused || settings.active;
+  if (!suspended) owed += seconds;
+  while (!suspended && owed >= TICK) {
     owed -= TICK;
     if (match.state.winner !== null) continue;
     const wasAlive = alive(match.state, me);
@@ -198,7 +313,7 @@ function loop(now: number) {
   const own = hover && s.towers.find((t) => t.cell === hover!.y * s.width + hover!.x);
   const def = config.content.towers[own ? own.id : selected];
   view.highlight(hover, !!own || !checkBuild(s, config, me, selected, hover?.x ?? -1, hover?.y ?? -1), def.kind === 'shooter' ? def.range / 1000 : 0);
-  view.draw(s, config, paused ? 0 : seconds, me, target);
+  view.draw(s, config, suspended ? 0 : seconds, me, target);
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
