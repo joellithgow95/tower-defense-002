@@ -74,7 +74,7 @@ A sluice that "changes terrain for everyone when a player interacts with it" mea
 
 ### Open questions
 
-- Settled by Joel on 2026-11-28: deep water blocks troops, shallows slow them (now in [`design.md`](../design.md)). Whether swamp is a third kind, or the same as shallows, is still open.
+- Settled by Joel on 2026-11-28: deep water blocks troops, shallows slow them (now in [`design.md`](../design.md)). Swamp is deferred until a map needs it; Joel thinks it is probably the same as shallows.
 - Can you build on shallows?
 - Who may use the sluice: anyone, whoever has land next to it, or whoever holds it? Does it cost gold, and can it be used again (and how soon)?
 - Does a sluice change take effect at once or over a few seconds, so players can react?
