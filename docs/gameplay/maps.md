@@ -41,7 +41,7 @@ A new **mode** (say, a 2 v 1 v 1) is a code change: add it to `modes` in `src/co
 
 ## Terrain for Drowned Woods
 
-Drowned Woods is planned as a wetland map with water, shallows, causeways and a sluice. Today the core knows only grass, rock and castles: `rock` is one `boolean[]` in `State`, and troops find their way by counting steps (`src/core/grid.ts`), so every open cell costs the same. Everything below is a proposal.
+Drowned Woods is planned as a wetland map with water, shallows, causeways and a sluice. Its board and events are sketched in [map events](map-events.md), and its place in the world in [Drowned Woods](../worldbuilding/locations/drowned-woods.md). Today the core knows only grass, rock and castles: `rock` is one `boolean[]` in `State`, and troops find their way by counting steps (`src/core/grid.ts`), so every open cell costs the same. Everything below is a proposal.
 
 ### Proposed cell letters and rules
 
@@ -52,7 +52,7 @@ Drowned Woods is planned as a wetland map with water, shallows, causeways and a 
 | Causeway | `=` | Yes, quickly | No | Keeps a fast lane open that no one can wall off |
 | Drowned tree | `T` | No | No | A blocker that looks different from rock |
 | Habitat | `h` | Yes | No? | Spawning grounds from the Alderfen sluice idea in [campaign missions](campaign-missions.md) |
-| Sluice | `S` | No | No | A machine cell; see below |
+| Sluice | `S` | Yes, on Drowned Woods | No | A machine cell; see below. On the [Drowned Woods sketch](map-events.md#drowned-woods-map-multiplayer-sketch) it is the only crossing, so it is a walkable gate-bridge |
 | Calling stone | `C` | No | No | A machine cell; see below |
 
 Single letters keep `rows` easy to draw by hand. A per-map `legend` field could map letters to terrain instead, so a later map can reuse letters.
