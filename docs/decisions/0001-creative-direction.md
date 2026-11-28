@@ -1,6 +1,11 @@
+---
+id: decisions.0001
+title: Ecological restoration as creative direction
+status: proposed
+created: 2026-11-27
+updated: 2026-11-27
+---
 # 0001 — Ecological restoration as creative direction
-Status: Proposed
-Date: 2026-11-27
 
 ## Context
 The project is a low-poly fantasy maze tower defense with competitive play and a future campaign. The founding discussion explored a wetland region inspired by the Lithgow surname.
