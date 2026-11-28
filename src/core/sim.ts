@@ -33,8 +33,19 @@ function addTower(s: State, content: Config['content'], id: string, team: Team, 
   s.towers.push({ uid: s.nextUid++, id, team, cell, demolish: 0, timer: def.kind === 'shooter' ? def.fireTicks : def.spawnTicks });
 }
 
-/** On the two-sided maps, team 0 owns the left half and team 1 the right. */
-export const ownerOf = (s: State, x: number): Team => (x < s.width / 2 ? 0 : 1);
+/** Cells apart, counting a diagonal step as one: a square ring around a cell. */
+const cellsApart = (s: State, a: number, b: number) =>
+  Math.max(Math.abs((a % s.width) - (b % s.width)), Math.abs(Math.floor(a / s.width) - Math.floor(b / s.width)));
+
+/** Land spreads from your castle and your standing buildings; a building being sold no longer counts. */
+export function inTerritory(s: State, rules: Config['rules'], team: Team, cell: number): boolean {
+  if (cellsApart(s, s.bases[team], cell) <= rules.buildRadius) return true;
+  return s.towers.some((t) => t.team === team && t.demolish === 0 && cellsApart(s, t.cell, cell) <= rules.buildRadius);
+}
+
+/** Inside the ring around `team`'s enemy's castle where nobody may build. */
+export const nearEnemyCastle = (s: State, rules: Config['rules'], team: Team, cell: number) =>
+  cellsApart(s, s.bases[other(team)], cell) <= rules.castleNoBuildRadius;
 
 /** Why a build would be refused, or null if it is allowed. Changes nothing. */
 export function checkBuild(s: State, cfg: Config, team: Team, id: string, x: number, y: number): Refusal | null {
@@ -42,8 +53,9 @@ export function checkBuild(s: State, cfg: Config, team: Team, id: string, x: num
   if (s.winner !== null) return 'game-over';
   if (!def) return 'unknown-tower';
   if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= s.width || y >= s.height) return 'outside';
-  if (ownerOf(s, x) !== team) return 'not-your-land';
   const cell = y * s.width + x;
+  if (!inTerritory(s, cfg.rules, team, cell)) return 'not-your-land';
+  if (nearEnemyCastle(s, cfg.rules, team, cell)) return 'near-enemy-castle';
   const blocked = blockedCells(s);
   if (blocked[cell] || s.troops.some((t) => t.from === cell || t.to === cell)) return 'occupied';
   if (s.gold[team] < def.cost) return 'no-gold';

@@ -6,7 +6,7 @@ import { CELL, adjacent, checkBuild, createMatch, step } from '../src/core/sim';
 import { problems } from '../src/core/validate';
 
 const quiet = { ...cfg, map: { ...cfg.map, startingTowers: [] } };
-const corridor = { ...cfg, map: { name: 'corridor', startingTowers: [], rows: ['######', '1....2', '######'] } };
+const corridor = { ...cfg, rules: { ...cfg.rules, castleNoBuildRadius: 0 }, map: { name: 'corridor', startingTowers: [], rows: ['######', '1....2', '######'] } };
 
 function botMatch(ticks: number) {
   const match = new Match(cfg);
@@ -32,10 +32,9 @@ describe('content', () => {
 });
 
 describe('building', () => {
-  it('charges gold, and only on your own half', () => {
+  it('charges gold', () => {
     const s = createMatch(quiet);
-    expect(checkBuild(s, quiet, 0, 'archer', 15, 1)).toBe('not-your-land');
-    step(s, quiet, [{ type: 'build', team: 0, tower: 'archer', x: 1, y: 1 }]);
+    step(s, quiet, [{ type: 'build', team: 0, tower: 'archer', x: 1, y: 4 }]);
     expect(s.towers).toHaveLength(1);
     expect(s.gold[0]).toBe(40);
   });
@@ -45,12 +44,49 @@ describe('building', () => {
   });
   it('refunds after the demolish delay', () => {
     const s = createMatch(quiet);
-    step(s, quiet, [{ type: 'build', team: 0, tower: 'archer', x: 1, y: 1 }]);
-    step(s, quiet, [{ type: 'sell', team: 0, x: 1, y: 1 }]);
+    step(s, quiet, [{ type: 'build', team: 0, tower: 'archer', x: 1, y: 4 }]);
+    step(s, quiet, [{ type: 'sell', team: 0, x: 1, y: 4 }]);
     const before = s.gold[0];
     for (let i = 0; i < quiet.rules.demolishTicks; i++) step(s, quiet);
     expect(s.towers).toHaveLength(0);
     expect(s.gold[0]).toBeGreaterThanOrEqual(before + 12);
+  });
+});
+
+describe('land', () => {
+  // Rocky Pass: team 0's castle is at x 0, y 5 and team 1's at x 21, y 6. buildRadius and castleNoBuildRadius are 3.
+  const rich = { ...quiet, rules: { ...quiet.rules, startingGold: 1000 } };
+  it('starts as a ring around your castle, diagonals included', () => {
+    const s = createMatch(rich);
+    expect(checkBuild(s, rich, 0, 'archer', 3, 2)).toBeNull();
+    expect(checkBuild(s, rich, 0, 'archer', 4, 5)).toBe('not-your-land');
+    expect(checkBuild(s, rich, 0, 'archer', 15, 1)).toBe('not-your-land');
+  });
+  it('spreads from each building you add', () => {
+    const s = createMatch(rich);
+    step(s, rich, [{ type: 'build', team: 0, tower: 'archer', x: 3, y: 5 }]);
+    expect(checkBuild(s, rich, 0, 'archer', 6, 5)).toBeNull();
+    expect(checkBuild(s, rich, 1, 'archer', 6, 5)).toBe('not-your-land');
+  });
+  it('stops spreading from a building once it is being sold', () => {
+    const s = createMatch(rich);
+    step(s, rich, [{ type: 'build', team: 0, tower: 'archer', x: 3, y: 5 }]);
+    step(s, rich, [{ type: 'sell', team: 0, x: 3, y: 5 }]);
+    expect(checkBuild(s, rich, 0, 'archer', 6, 5)).toBe('not-your-land');
+  });
+  it('can reach across the board, but not into the ring round the enemy castle', () => {
+    const s = createMatch(rich);
+    for (let x = 3; x <= 15; x += 3) step(s, rich, [{ type: 'build', team: 0, tower: 'archer', x, y: 5 }]);
+    expect(s.towers).toHaveLength(5);
+    expect(checkBuild(s, rich, 0, 'archer', 17, 2)).toBeNull();
+    expect(checkBuild(s, rich, 0, 'archer', 18, 3)).toBe('near-enemy-castle');
+    const open = { ...rich, rules: { ...rich.rules, castleNoBuildRadius: 0 } };
+    expect(checkBuild(s, open, 0, 'archer', 18, 3)).toBeNull();
+  });
+  it('explains a bad radius', () => {
+    const bad = structuredClone(cfg);
+    bad.rules.castleNoBuildRadius = -1;
+    expect(problems(bad)[0]).toContain('"castleNoBuildRadius" must be a whole number, 0 or more');
   });
 });
 

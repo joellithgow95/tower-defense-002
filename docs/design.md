@@ -22,7 +22,14 @@ updated: 2026-11-27
 - A headless simulator for balance, bots and ML training
 - A smaller-board mode for phones
 
+## Land
+- You may build within `buildRadius` cells of your castle or any of your standing buildings, counting diagonals (a square ring). Every building spreads your land, so you can creep across the board. A building being sold stops counting at once.
+- Nobody may build within `castleNoBuildRadius` cells of the enemy castle, so a spawner can't sit on its doorstep. Set it to 0 to allow rushing.
+- Both live in `content/rules.json` (defaults 3 and 3). Range only matters when you place something: a building left outside your land stays.
+- Next: buildings get health and shooters can hit enemy buildings, never the castle, so a creeping front can be pushed back.
+
 ## How this version differs for now
+- The board is no longer split in halves.
 - The board is the prototype's default turned sideways for desktop.
 - Shots hit instantly; the arrow is only visual. (The prototype's arrows travelled.)
 - Troops move through cells on whole-number steps, so old balance numbers and puzzle solutions need rechecking.

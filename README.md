@@ -13,7 +13,7 @@ npm install
 npm run dev      # then open the address it prints
 ```
 
-Click your half (left) to build. **1-3** pick a building, **X** sells the one under the mouse, **P** pauses, **R** restarts.
+Click your land (tinted blue) to build. Each building spreads your land a few cells further. **1-3** pick a building, **X** sells the one under the mouse, **P** pauses, **R** restarts.
 
 ## Found a bug or have an idea?
 

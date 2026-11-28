@@ -20,7 +20,8 @@ const REASONS: Record<Refusal, string> = {
   'game-over': 'The match is over. Press R to play again.',
   'unknown-tower': 'That tower does not exist.',
   outside: 'That is off the board.',
-  'not-your-land': 'Build on your own half (the left).',
+  'not-your-land': `Build within ${config.rules.buildRadius} cells of your castle or one of your buildings.`,
+  'near-enemy-castle': 'Too close to the enemy castle.',
   occupied: 'Something is already there.',
   'no-gold': 'Not enough gold yet.',
   'blocks-route': 'That would wall troops in. Leave a route open.',
@@ -43,7 +44,7 @@ function restart() {
   queued = [];
   paused = false;
   view.reset(match.state);
-  say('Pick a tower, then click your half. Your towers are the walls.', 6);
+  say('Pick a tower, then build on your land (blue). Every building spreads your land. Your towers are the walls.', 6);
 }
 
 const cards = Object.entries(config.content.towers).map(([id, def], i) => {

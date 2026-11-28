@@ -24,7 +24,10 @@ export function problems({ content, map, rules }: Config): string[] {
       if (!content.troops[t.troop]) out.push(`${where}: there is no troop called "${t.troop}" in content/troops.json.`);
     } else out.push(`${where}: "kind" must be "shooter" or "spawner".`);
   }
-  whole('content/rules.json', rules, ['startingGold', 'goldPerIncome', 'incomeTicks', 'baseHealth', 'refundPercent', 'demolishTicks']);
+  whole('content/rules.json', rules, ['startingGold', 'goldPerIncome', 'incomeTicks', 'baseHealth', 'refundPercent', 'demolishTicks', 'buildRadius']);
+  if (!Number.isInteger(rules.castleNoBuildRadius) || rules.castleNoBuildRadius < 0) {
+    out.push(`content/rules.json: "castleNoBuildRadius" must be a whole number, 0 or more (it is ${JSON.stringify(rules.castleNoBuildRadius)}). Use 0 to turn it off.`);
+  }
 
   const where = `map "${map.name}"`;
   const width = map.rows[0]?.length ?? 0;

@@ -52,7 +52,7 @@ Multiplayer, replays, puzzles, bots and training all rely on these.
 
 - `speed` is thousandths of a cell per second; `range` is thousandths of a cell; `...Ticks` are 60ths of a second.
 - A new tower or troop works with a placeholder block until it gets a model in `src/game/models.ts`.
-- Board size comes from the map file, so smaller boards need no code change. Maps are two-sided: left half is team 0.
+- Board size comes from the map file, so smaller boards need no code change. Team 0's castle is `1` in the map file. Where each side may build comes from `buildRadius` and `castleNoBuildRadius` in `content/rules.json`, not from the map.
 
 ## Art
 
