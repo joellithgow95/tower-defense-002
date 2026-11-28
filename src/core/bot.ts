@@ -1,4 +1,4 @@
-/** A very simple opponent: now and then it buys something and puts it near the enemy's route. */
+/** A very simple opponent: now and then it buys something near the enemy's route, and it attacks once its garrison is big enough. */
 import { blockedCells, distances, nextStep } from './grid';
 import { checkBuild, other } from './sim';
 import type { Action, Config, State, Team } from './types';
@@ -17,8 +17,14 @@ export function rng(seed: number) {
 export function createBot(team: Team, seed: number) {
   const random = rng(seed);
   let want: string | null = null;
+  let attackAt = 4 + (random() % 6);
   return (s: State, cfg: Config): Action[] => {
     if (s.tick % 90 !== 0 || s.winner !== null) return [];
+    const army = Object.values(s.garrison[team]).reduce((a, b) => a + b, 0);
+    if (army >= attackAt) {
+      attackAt = 4 + (random() % 6);
+      return [{ type: 'launch', team, target: other(team) }];
+    }
     const roll = random() % 10;
     want ??= roll < 6 ? 'archer' : roll < 9 ? 'barracks' : 'knight_hall';
     if (s.gold[team] < cfg.content.towers[want].cost) return [];

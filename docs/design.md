@@ -23,6 +23,13 @@ updated: 2026-11-27
 - A headless simulator for balance, bots and ML training
 - A smaller-board mode for phones
 
+## Armies (inspired by Comet Crash)
+- Spawner buildings don't send troops on their own. They train them into a garrison at your castle.
+- Each spawner adds `garrison` room for its troop (`content/towers.json`). A full garrison stops training until you launch.
+- **Launch** (Space) sends your whole garrison at the enemy castle. Troops leave the castle in single file, one every `launchGapTicks`, and take the shortest route.
+- The garrison doesn't defend; your towers do.
+- Later ideas: launch only part of the garrison, pick which troops go, launch from a spawner instead of the castle.
+
 ## Land
 - You may build within `buildRadius` cells of your castle or any of your standing buildings, counting diagonals (a square ring). Every building spreads your land, so you can creep across the board. A building being sold stops counting at once.
 - Nobody may build within `castleNoBuildRadius` cells of the enemy castle, so a spawner can't sit on its doorstep. Set it to 0 to allow rushing.

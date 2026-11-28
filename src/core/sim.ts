@@ -23,9 +23,25 @@ export function createMatch({ map, rules, content }: Config): State {
     bases: [flat.indexOf('1'), flat.indexOf('2')],
     rock: [...flat].map((ch) => ch === '#'),
     towers: [], troops: [], nextUid: 1, winner: null,
+    garrison: [emptyGarrison(content), emptyGarrison(content)],
+    departures: [[], []],
+    departTimer: [0, 0],
   };
   for (const t of map.startingTowers) addTower(s, content, t.id, t.team, t.y * width + t.x);
   return s;
+}
+
+/** Every troop id at 0, always in the same order, so fingerprints match on every machine. */
+const emptyGarrison = (content: Config['content']) => Object.fromEntries(Object.keys(content.troops).map((id) => [id, 0]));
+
+/** How many of `troop` your castle can hold: the sum of `garrison` over your standing buildings that train it. */
+export function garrisonRoom(s: State, cfg: Config, team: Team, troop: string): number {
+  let room = 0;
+  for (const t of s.towers) {
+    const def = cfg.content.towers[t.id];
+    if (t.team === team && t.demolish === 0 && def.kind === 'spawner' && def.troop === troop) room += def.garrison;
+  }
+  return room;
 }
 
 function addTower(s: State, content: Config['content'], id: string, team: Team, cell: number) {
@@ -58,20 +74,17 @@ export function checkBuild(s: State, cfg: Config, team: Team, id: string, x: num
   if (nearEnemyCastle(s, cfg.rules, team, cell)) return 'near-enemy-castle';
   const blocked = blockedCells(s);
   if (blocked[cell]) return 'occupied';
-  // Troops in the way back off (see moveTroops), unless one has just stepped out of a building and has nowhere to go.
+  // Troops in the way back off (see moveTroops), unless one has just stepped out of its castle and has nowhere to go.
   if (s.troops.some((t) => t.to === cell && blocked[t.from])) return 'occupied';
   if (s.gold[team] < def.cost) return 'no-gold';
 
-  // Nobody may be walled in: both bases, every working spawner and every troop need a route.
+  // Nobody may be walled in: the castles need a route to each other, and every troop needs one to its target.
   blocked[cell] = true;
   const toBase = [distances(s, s.bases[0], blocked), distances(s, s.bases[1], blocked)];
   const reaches = (from: number, side: Team) => nextStep(s, from, s.bases[side], toBase[side]) !== null;
   if (!reaches(s.bases[0], 1)) return 'blocks-route';
-  const spawners = s.towers.filter((t) => t.demolish === 0 && cfg.content.towers[t.id].kind === 'spawner').map((t) => ({ cell: t.cell, team: t.team }));
-  if (def.kind === 'spawner') spawners.push({ cell, team });
-  if (spawners.some((t) => !reaches(t.cell, other(t.team)))) return 'blocks-route';
   // A troop walking into the new building turns back to where it came from, so its route starts there.
-  if (s.troops.some((t) => !reaches(t.to === cell ? t.from : t.to, other(t.team)))) return 'blocks-route';
+  if (s.troops.some((t) => !reaches(t.to === cell ? t.from : t.to, t.target))) return 'blocks-route';
   return null;
 }
 
@@ -82,10 +95,41 @@ function apply(s: State, cfg: Config, a: Action, events: GameEvent[]) {
     if (reason) return refuse(reason);
     s.gold[a.team] -= cfg.content.towers[a.tower].cost;
     addTower(s, cfg.content, a.tower, a.team, a.y * s.width + a.x);
+  } else if (a.type === 'launch') {
+    if (s.winner !== null) return refuse('game-over');
+    if (a.target === a.team || (a.target !== 0 && a.target !== 1)) return refuse('bad-target');
+    const garrison = s.garrison[a.team];
+    let count = 0;
+    // They leave in content/troops.json order.
+    for (const id of Object.keys(garrison)) {
+      for (let i = 0; i < garrison[id]; i++) s.departures[a.team].push({ id, target: a.target });
+      count += garrison[id];
+      garrison[id] = 0;
+    }
+    if (!count) return refuse('empty-garrison');
+    if (s.departTimer[a.team] === 0) s.departTimer[a.team] = 1;
+    events.push({ type: 'launched', team: a.team, target: a.target, count });
   } else {
     const tower = s.towers.find((t) => t.cell === a.y * s.width + a.x && t.team === a.team && t.demolish === 0);
     if (!tower || s.winner !== null) return refuse('nothing-to-sell');
     tower.demolish = cfg.rules.demolishTicks;
+  }
+}
+
+/** Launched troops leave the castle in single file, one every `launchGapTicks`. */
+function marchOut(s: State, cfg: Config) {
+  const blocked = blockedCells(s);
+  for (const team of [0, 1] as const) {
+    const queue = s.departures[team];
+    if (!queue.length || --s.departTimer[team] > 0) continue;
+    const { id, target } = queue[0];
+    const home = s.bases[team], goal = s.bases[target];
+    const next = nextStep(s, home, goal, distances(s, goal, blocked));
+    // Building never seals a castle in, so there is always a way out; wait a tick just in case.
+    if (next === null) { s.departTimer[team] = 1; continue; }
+    queue.shift();
+    s.troops.push({ uid: s.nextUid++, id, team, target, hp: cfg.content.troops[id].health, from: home, to: next, progress: 0 });
+    s.departTimer[team] = queue.length ? cfg.rules.launchGapTicks : 0;
   }
 }
 
@@ -103,7 +147,7 @@ function moveTroops(s: State, cfg: Config, events: GameEvent[]) {
   const toBase = [distances(s, s.bases[0], blocked), distances(s, s.bases[1], blocked)];
   const arrived = new Set<number>();
   for (const t of s.troops) {
-    const side = other(t.team), goal = s.bases[side];
+    const side = t.target, goal = s.bases[side];
     // A wall appeared ahead: turn round on the spot.
     if (t.to !== goal && blocked[t.to] && !blocked[t.from]) {
       [t.from, t.to] = [t.to, t.from];
@@ -131,12 +175,11 @@ function runTower(s: State, cfg: Config, tower: Tower, events: GameEvent[]) {
   const def = cfg.content.towers[tower.id];
   if (--tower.timer > 0) return;
   if (def.kind === 'spawner') {
+    // Train one troop into the castle's garrison. A full garrison waits a whole cycle before trying again.
     tower.timer = def.spawnTicks;
-    const goal = s.bases[other(tower.team)];
-    const next = nextStep(s, tower.cell, goal, distances(s, goal, blockedCells(s)));
-    if (next !== null) {
-      s.troops.push({ uid: s.nextUid++, id: def.troop, team: tower.team, hp: cfg.content.troops[def.troop].health, from: tower.cell, to: next, progress: 0 });
-    }
+    if (s.garrison[tower.team][def.troop] >= garrisonRoom(s, cfg, tower.team, def.troop)) return;
+    s.garrison[tower.team][def.troop]++;
+    events.push({ type: 'trained', team: tower.team, troop: def.troop });
     return;
   }
   const tx = (tower.cell % s.width) * CELL, ty = Math.floor(tower.cell / s.width) * CELL;
@@ -186,6 +229,7 @@ export function step(s: State, cfg: Config, actions: Action[] = []): GameEvent[]
   }
   s.towers = s.towers.filter((t) => !sold.has(t.uid));
 
+  marchOut(s, cfg);
   moveTroops(s, cfg, events);
 
   const [a, b] = s.baseHealth;

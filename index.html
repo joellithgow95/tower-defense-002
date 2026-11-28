@@ -9,13 +9,13 @@
 <body>
   <canvas id="board"></canvas>
   <header>
-    <div class="side blue"><b>You</b><span>♥ <i id="hp0"></i></span><span>● <i id="gold"></i> gold</span></div>
+    <div class="side blue"><b>You</b><span>♥ <i id="hp0"></i></span><span>● <i id="gold"></i> gold</span><span>⚔ <i id="army0"></i></span></div>
     <div id="message" role="status"></div>
-    <div class="side red"><b>Bot</b><span>♥ <i id="hp1"></i></span></div>
+    <div class="side red"><b>Bot</b><span>♥ <i id="hp1"></i></span><span>⚔ <i id="army1"></i></span></div>
   </header>
   <footer>
     <nav id="cards"></nav>
-    <nav><button id="sell">Sell <kbd>X</kbd></button><button id="pause">Pause <kbd>P</kbd></button><button id="restart">Restart <kbd>R</kbd></button><button id="report">Copy bug report</button></nav>
+    <nav><button id="launch">Launch <kbd>Space</kbd></button><button id="sell">Sell <kbd>X</kbd></button><button id="pause">Pause <kbd>P</kbd></button><button id="restart">Restart <kbd>R</kbd></button><button id="report">Copy bug report</button></nav>
   </footer>
   <script type="module" src="/src/game/main.ts"></script>
 </body>

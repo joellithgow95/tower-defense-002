@@ -41,7 +41,7 @@ describe('building', () => {
   it('lets you build where troops are walking, and they go round', () => {
     const s = createMatch(quiet);
     const at = (x: number, y: number) => y * s.width + x;
-    s.troops.push({ uid: 999, id: 'soldier', team: 1, hp: 10, from: at(3, 5), to: at(2, 5), progress: CELL / 2 });
+    s.troops.push({ uid: 999, id: 'soldier', team: 1, target: 0, hp: 10, from: at(3, 5), to: at(2, 5), progress: CELL / 2 });
     step(s, quiet, [{ type: 'build', team: 0, tower: 'archer', x: 2, y: 5 }]);
     expect(s.towers).toHaveLength(1);
     for (let i = 0; i < 120; i++) {
@@ -50,11 +50,11 @@ describe('building', () => {
       if (troop) expect(troop.to).not.toBe(at(2, 5));
     }
   });
-  it('will not build in front of a troop that has just left its building', () => {
+  it('will not build in front of a troop that has just left its castle', () => {
     const s = createMatch(cfg);
     const at = (x: number, y: number) => y * s.width + x;
-    s.troops.push({ uid: 999, id: 'soldier', team: 0, hp: 10, from: at(2, 4), to: at(3, 4), progress: 0 });
-    expect(checkBuild(s, cfg, 0, 'archer', 3, 4)).toBe('occupied');
+    s.troops.push({ uid: 999, id: 'soldier', team: 0, target: 1, hp: 10, from: at(0, 5), to: at(1, 5), progress: 0 });
+    expect(checkBuild(s, cfg, 0, 'archer', 1, 5)).toBe('occupied');
   });
   it('refuses to seal the only route', () => {
     const s = createMatch(corridor);
@@ -108,10 +108,49 @@ describe('land', () => {
   });
 });
 
+describe('armies', () => {
+  // Rocky Pass starts each side with one Barracks: 5 soldiers of room, one trained every 240 ticks.
+  const train = (s: ReturnType<typeof createMatch>, ticks: number) => { for (let i = 0; i < ticks; i++) step(s, cfg); };
+  it('trains troops into the castle instead of sending them', () => {
+    const s = createMatch(cfg);
+    train(s, 240);
+    expect(s.garrison[0].soldier).toBe(1);
+    expect(s.troops).toHaveLength(0);
+  });
+  it('stops training when the garrison is full, and more buildings make more room', () => {
+    const s = createMatch(cfg);
+    train(s, 240 * 8);
+    expect(s.garrison[0].soldier).toBe(5);
+    s.gold[0] = 1000;
+    step(s, cfg, [{ type: 'build', team: 0, tower: 'barracks', x: 1, y: 2 }]);
+    train(s, 240 * 6);
+    expect(s.garrison[0].soldier).toBe(10);
+  });
+  it('launches the whole garrison in single file from the castle', () => {
+    const s = createMatch(cfg);
+    s.garrison[0].soldier = 3;
+    const events = step(s, cfg, [{ type: 'launch', team: 0, target: 1 }]);
+    expect(events).toContainEqual({ type: 'launched', team: 0, target: 1, count: 3 });
+    expect(s.garrison[0].soldier).toBe(0);
+    expect(s.troops).toHaveLength(1);
+    expect(s.troops[0].from).toBe(s.bases[0]);
+    for (let i = 1; i < cfg.rules.launchGapTicks; i++) step(s, cfg);
+    expect(s.troops).toHaveLength(1);
+    step(s, cfg);
+    expect(s.troops).toHaveLength(2);
+  });
+  it('refuses an empty launch, or one at your own castle', () => {
+    const s = createMatch(cfg);
+    expect(step(s, cfg, [{ type: 'launch', team: 0, target: 1 }])).toContainEqual(expect.objectContaining({ reason: 'empty-garrison' }));
+    s.garrison[0].soldier = 1;
+    expect(step(s, cfg, [{ type: 'launch', team: 0, target: 0 }])).toContainEqual(expect.objectContaining({ reason: 'bad-target' }));
+  });
+});
+
 describe('a match', () => {
-  it('ends when troops reach a base', () => {
+  it('ends when launched troops reach a base', () => {
     const s = createMatch({ ...cfg, map: { ...cfg.map, startingTowers: [cfg.map.startingTowers[0]] } });
-    while (s.winner === null && s.tick < 60 * 600) step(s, cfg);
+    while (s.winner === null && s.tick < 60 * 600) step(s, cfg, s.tick % 600 === 0 && s.garrison[0].soldier ? [{ type: 'launch', team: 0, target: 1 }] : []);
     expect(s.winner).toBe(0);
   });
   it('replays to exactly the same state', () => {

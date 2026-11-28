@@ -26,6 +26,8 @@ const REASONS: Record<Refusal, string> = {
   'no-gold': 'Not enough gold yet.',
   'blocks-route': 'That would wall troops in. Leave a route open.',
   'nothing-to-sell': 'Point at one of your towers to sell it.',
+  'empty-garrison': 'Your castle has no troops yet. Build a Barracks or Knight Hall to train some.',
+  'bad-target': 'You can only attack an enemy castle.',
 };
 
 let match: Match, bot: ReturnType<typeof createBot>, paused = false, queued: Action[] = [];
@@ -44,7 +46,7 @@ function restart() {
   queued = [];
   paused = false;
   view.reset(match.state);
-  say('Pick a tower, then build on your land (blue). Every building spreads your land. Your towers are the walls.', 6);
+  say('Build on your land (blue): towers are walls, Barracks and Knight Halls train troops. Press Space to launch them at the enemy.', 7);
 }
 
 const cards = Object.entries(config.content.towers).map(([id, def], i) => {
@@ -58,10 +60,12 @@ const cards = Object.entries(config.content.towers).map(([id, def], i) => {
 });
 
 const sell = () => hover && queued.push({ type: 'sell', team: 0, ...hover });
+const launch = () => queued.push({ type: 'launch', team: 0, target: 1 });
 const togglePause = () => { paused = !paused; say(paused ? 'Paused' : 'Go!', paused ? 1e6 : 1); };
 $('pause').onclick = togglePause;
 $('restart').onclick = restart;
 $('sell').onclick = () => say('Point at one of your towers and press X.');
+$('launch').onclick = () => !paused && launch();
 $('report').onclick = async () => {
   const report = JSON.stringify({ ...match.replay(__BUILD__), fingerprint: fingerprint(match.state) });
   try { await navigator.clipboard.writeText(report); say('Bug report copied. Paste it into a new GitHub issue.', 5); }
@@ -78,11 +82,18 @@ addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const key = e.key.toLowerCase();
   if (key === 'x' && !paused) sell();
+  if (key === ' ' && !paused) { e.preventDefault(); launch(); }
   if (key === 'p') togglePause();
   if (key === 'r') restart();
   const card = cards[Number(key) - 1];
   if (card) selected = card.id;
 });
+
+/** "6 Soldiers, 2 Knights": what is waiting in a castle. */
+function armyText(garrison: Record<string, number>) {
+  const parts = Object.entries(garrison).filter(([, n]) => n > 0).map(([id, n]) => `${n} ${config.content.troops[id].label}${n === 1 ? '' : 's'}`);
+  return parts.join(', ') || 'no troops';
+}
 
 restart();
 const TICK = 1 / TICKS_PER_SECOND;
@@ -104,6 +115,8 @@ function loop(now: number) {
   $('hp0').textContent = String(s.baseHealth[0]);
   $('hp1').textContent = String(s.baseHealth[1]);
   $('gold').textContent = String(s.gold[0]);
+  $('army0').textContent = armyText(s.garrison[0]);
+  $('army1').textContent = armyText(s.garrison[1]);
   for (const c of cards) {
     c.button.setAttribute('aria-pressed', String(c.id === selected));
     c.button.classList.toggle('poor', s.gold[0] < c.def.cost);

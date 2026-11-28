@@ -20,11 +20,11 @@ export function problems({ content, map, rules }: Config): string[] {
     if (!t.label) out.push(`${where}: give it a "label", the name players see.`);
     if (t.kind === 'shooter') whole(where, t, ['cost', 'range', 'fireTicks', 'damage']);
     else if (t.kind === 'spawner') {
-      whole(where, t, ['cost', 'spawnTicks']);
+      whole(where, t, ['cost', 'spawnTicks', 'garrison']);
       if (!content.troops[t.troop]) out.push(`${where}: there is no troop called "${t.troop}" in content/troops.json.`);
     } else out.push(`${where}: "kind" must be "shooter" or "spawner".`);
   }
-  whole('content/rules.json', rules, ['startingGold', 'goldPerIncome', 'incomeTicks', 'baseHealth', 'refundPercent', 'demolishTicks', 'buildRadius']);
+  whole('content/rules.json', rules, ['startingGold', 'goldPerIncome', 'incomeTicks', 'baseHealth', 'refundPercent', 'demolishTicks', 'buildRadius', 'launchGapTicks']);
   if (!Number.isInteger(rules.castleNoBuildRadius) || rules.castleNoBuildRadius < 0) {
     out.push(`content/rules.json: "castleNoBuildRadius" must be a whole number, 0 or more (it is ${JSON.stringify(rules.castleNoBuildRadius)}). Use 0 to turn it off.`);
   }
