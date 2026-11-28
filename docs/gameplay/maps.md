@@ -41,7 +41,7 @@ A new **mode** (say, a 2 v 1 v 1) is a code change: add it to `modes` in `src/co
 
 ## Terrain for Drowned Woods
 
-Drowned Woods is planned as a wetland map with water, shallows, causeways and a sluice. Today the core knows only grass, rock and castles: `rock` is one `boolean[]` in `State`, and troops find their way by counting steps (`src/core/grid.ts`), so every open cell costs the same. Everything below is a proposal.
+Drowned Woods is planned as a wetland map with water, shallows, causeways and a sluice. Its board and events are sketched in [map events](map-events.md), and its place in the world in [Drowned Woods](../worldbuilding/locations/drowned-woods.md). Today the core knows only grass, rock and castles: `rock` is one `boolean[]` in `State`, and troops find their way by counting steps (`src/core/grid.ts`), so every open cell costs the same. Everything below is a proposal.
 
 ### Proposed cell letters and rules
 
@@ -52,7 +52,7 @@ Drowned Woods is planned as a wetland map with water, shallows, causeways and a 
 | Causeway | `=` | Yes, quickly | No | Keeps a fast lane open that no one can wall off |
 | Drowned tree | `T` | No | No | A blocker that looks different from rock |
 | Habitat | `h` | Yes | No? | Spawning grounds from the Alderfen sluice idea in [campaign missions](campaign-missions.md) |
-| Sluice | `S` | No | No | A machine cell; see below |
+| Sluice | `S` | Yes, on Drowned Woods | No | A machine cell; see below. On the [Drowned Woods sketch](map-events.md#drowned-woods-map-multiplayer-sketch) it is the only crossing, so it is a walkable gate-bridge |
 | Calling stone | `C` | No | No | A machine cell; see below |
 
 Single letters keep `rows` easy to draw by hand. A per-map `legend` field could map letters to terrain instead, so a later map can reuse letters.
@@ -74,7 +74,7 @@ A sluice that "changes terrain for everyone when a player interacts with it" mea
 
 ### Open questions
 
-- [`design.md`](../design.md) lists "water (slows)" and "swamp (slows, takes more damage)" as wanted terrain. Here, deep water is impassable and shallows are the slow cells. Which is right, or are both kinds of water wanted?
+- Settled by Joel on 2026-11-28: deep water blocks troops, shallows slow them (now in [`design.md`](../design.md)). Swamp is deferred until a map needs it; Joel thinks it is probably the same as shallows.
 - Can you build on shallows?
 - Who may use the sluice: anyone, whoever has land next to it, or whoever holds it? Does it cost gold, and can it be used again (and how soon)?
 - Does a sluice change take effect at once or over a few seconds, so players can react?

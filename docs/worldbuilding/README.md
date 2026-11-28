@@ -10,6 +10,7 @@ The founding discussion proposes a fantasy region inspired by the Lithgow surnam
 - [Ecology](ecology.md)
 - [Civilizations](civilizations.md)
 - [Lythgoe](locations/lythgoe.md)
+- [Drowned Woods](locations/drowned-woods.md)
 - [Ideas](ideas/README.md)
 All entries are proposals or exploration pending team review.
 
