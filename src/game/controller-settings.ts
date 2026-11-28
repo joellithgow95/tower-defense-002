@@ -4,7 +4,7 @@ import {
 } from './controller-preferences';
 
 const LABELS: Record<ControllerAction, string> = {
-  build: 'Build', sell: 'Sell', previous: 'Previous tower', next: 'Next tower', pause: 'Pause / resume', restart: 'Restart',
+  build: 'Build', sell: 'Sell', previous: 'Previous tower', next: 'Next tower', pause: 'Pause / resume', restart: 'Restart', launch: 'Launch troops',
 };
 
 export function createControllerSettings(dialog: HTMLDialogElement, opener: HTMLButtonElement, suspend: () => void) {

@@ -5,6 +5,7 @@ export const DEFAULT_BINDINGS = {
   next: 5,
   pause: 9,
   restart: 3,
+  launch: 7,
 };
 
 export type ControllerAction = keyof typeof DEFAULT_BINDINGS;
@@ -34,6 +35,8 @@ export const defaults = (): ControllerPreferences => ({ bindings: { ...DEFAULT_B
 export function loadPreferences(): ControllerPreferences {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
+    // Settings saved before an action existed get its default button.
+    if (saved?.bindings) saved.bindings = { ...DEFAULT_BINDINGS, ...saved.bindings };
     if (saved) {
       const buttons = ACTIONS.map((action) => saved.bindings?.[action]);
       if (buttons.every((button) => Number.isInteger(button) && BUTTON_LABELS[button])

@@ -13,8 +13,7 @@ export function neighbours(s: State, c: number): number[] {
 export function blockedCells(s: State): boolean[] {
   const b = s.rock.slice();
   for (const t of s.towers) b[t.cell] = true;
-  b[s.bases[0]] = true;
-  b[s.bases[1]] = true;
+  for (const base of s.bases) b[base] = true;
   return b;
 }
 

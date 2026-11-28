@@ -1,7 +1,7 @@
-/** A very simple opponent: now and then it buys something and puts it near the enemy's route. */
+/** A very simple opponent: now and then it builds near an enemy's route, and it attacks the weakest enemy once its garrison is big enough. */
 import { blockedCells, distances, nextStep } from './grid';
-import { checkBuild, other } from './sim';
-import type { Action, Config, State, Team } from './types';
+import { alive, checkBuild, enemies, players } from './sim';
+import type { Action, Config, Player, State } from './types';
 
 /** Small seeded random numbers (mulberry32), so bot matches can be repeated. */
 export function rng(seed: number) {
@@ -14,23 +14,35 @@ export function rng(seed: number) {
   };
 }
 
-export function createBot(team: Team, seed: number) {
+export function createBot(player: Player, seed: number) {
   const random = rng(seed);
   let want: string | null = null;
+  let attackAt = 4 + (random() % 6);
   return (s: State, cfg: Config): Action[] => {
-    if (s.tick % 90 !== 0 || s.winner !== null) return [];
+    if (s.tick % 90 !== 0 || s.winner !== null || !alive(s, player)) return [];
+    const foes = players(s).filter((q) => alive(s, q) && enemies(s, player, q));
+    const army = Object.values(s.garrison[player]).reduce((a, b) => a + b, 0);
+    if (army >= attackAt && foes.length) {
+      attackAt = 4 + (random() % 6);
+      // The weakest castle; a tie is broken at random, so bots don't all pick on the same player.
+      const weakest = foes.filter((q) => s.baseHealth[q] === Math.min(...foes.map((f) => s.baseHealth[f])));
+      const target = weakest[random() % weakest.length];
+      return [{ type: 'launch', player, target }];
+    }
     const roll = random() % 10;
     want ??= roll < 6 ? 'archer' : roll < 9 ? 'barracks' : 'knight_hall';
-    if (s.gold[team] < cfg.content.towers[want].cost) return [];
-    // Cells on or beside the path enemies take to our base.
-    const goal = s.bases[team], d = distances(s, goal, blockedCells(s));
+    if (s.gold[player] < cfg.content.towers[want].cost) return [];
+    // Cells on or beside the routes enemies take to our castle.
+    const goal = s.bases[player], d = distances(s, goal, blockedCells(s));
     const path: number[] = [];
-    for (let c = nextStep(s, s.bases[other(team)], goal, d); c !== null && c !== goal; c = nextStep(s, c, goal, d)) path.push(c);
+    for (const q of foes) {
+      for (let c = nextStep(s, s.bases[q], goal, d); c !== null && c !== goal; c = nextStep(s, c, goal, d)) path.push(c);
+    }
     const options: Action[] = [];
     for (let y = 0; y < s.height; y++) {
       for (let x = 0; x < s.width; x++) {
         const near = path.some((c) => Math.abs((c % s.width) - x) + Math.abs(Math.floor(c / s.width) - y) <= 1);
-        if (near && !checkBuild(s, cfg, team, want, x, y)) options.push({ type: 'build', team, tower: want, x, y });
+        if (near && !checkBuild(s, cfg, player, want, x, y)) options.push({ type: 'build', player, tower: want, x, y });
       }
     }
     if (!options.length) return [];

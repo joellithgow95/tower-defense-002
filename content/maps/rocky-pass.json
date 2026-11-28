@@ -2,13 +2,13 @@
   "name": "Rocky Pass",
   "startingTowers": [
     {
-      "team": 0,
+      "player": 0,
       "id": "barracks",
       "x": 2,
       "y": 4
     },
     {
-      "team": 1,
+      "player": 1,
       "id": "barracks",
       "x": 19,
       "y": 7

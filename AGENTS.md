@@ -17,6 +17,8 @@ this repo: other contributors can't load them.
 | `src/core/` | The game itself: no graphics, no browser. Strict rules below |
 | `src/game/` | Three.js drawing (`view.ts`), models (`models.ts`), controls (`main.ts`), HTML styles |
 | `tests/` | Vitest tests |
+| `src/net/` | Online play with no networking code: the message protocol, the room rules (`room.ts`) and lockstep (`lockstep.ts`). Same strict rules as `src/core/`, so tests can run it |
+| `worker/` | The Cloudflare Worker and Durable Object that host rooms; it only moves messages between browsers and `src/net/room.ts`. Deployed by `.github/workflows/deploy.yml` on merge to `main`; the hostname lives in `joellithgow95/jlithgow-ops` |
 | `scripts/` | Headless bot matches (`npm run sim`) and bug report replay (`npm run replay`) |
 | `docs/` | Plan, game design, creative vision, worldbuilding and decisions. Read [`docs/AGENTS.md`](docs/AGENTS.md) before editing there |
 | `.github/` | Issue forms, the PR template, and the `Check` workflow that runs `npm run check` on every PR |
@@ -52,11 +54,11 @@ Multiplayer, replays, puzzles, bots and training all rely on these.
 
 - `speed` is thousandths of a cell per second; `range` is thousandths of a cell; `...Ticks` are 60ths of a second.
 - A new tower or troop works with a placeholder block until it gets a model in `src/game/models.ts`.
-- Board size comes from the map file, so smaller boards need no code change. Team 0's castle is `1` in the map file. Where each side may build comes from `buildRadius` and `castleNoBuildRadius` in `content/rules.json`, not from the map.
+- Board size comes from the map file, so smaller boards need no code change. Player 0's castle is `1` in the map file, player 1's is `2`, and so on; game modes in `src/core/config.ts` say which players are on which team. Where each player may build comes from `buildRadius` and `castleNoBuildRadius` in `content/rules.json`, not from the map.
 
 ## Art
 
-Low-poly, flat-shaded, built in code from simple shapes. One cell is 1 unit. Keep silhouettes easy to tell apart from the fixed camera, and always show the team colour.
+Low-poly, flat-shaded, built in code from simple shapes. One cell is 1 unit. Keep silhouettes easy to tell apart from the fixed camera, and always show the player's colour.
 
 ## Gotchas
 
