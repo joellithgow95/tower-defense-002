@@ -1,7 +1,10 @@
-/** A very simple opponent: now and then it builds near an enemy's route, and it attacks the weakest enemy once its garrison is big enough. */
+/**
+ * A very simple opponent: now and then it builds near an enemy's route, and it attacks the weakest enemy once its garrison is big enough.
+ * Its spirit never walks: it stays on its castle and flies as the wisp to build anywhere on its land.
+ */
 import { blockedCells, distances, nextStep } from './grid';
-import { alive, checkBuild, enemies, players } from './sim';
-import type { Action, Config, Player, State } from './types';
+import { alive, checkBuild, enemies, players, spiritDef } from './sim';
+import type { Action, Config, Player, SpiritMode, State } from './types';
 
 /** Small seeded random numbers (mulberry32), so bot matches can be repeated. */
 export function rng(seed: number) {
@@ -20,6 +23,9 @@ export function createBot(player: Player, seed: number) {
   let attackAt = 4 + (random() % 6);
   return (s: State, cfg: Config): Action[] => {
     if (s.tick % 90 !== 0 || s.winner !== null || !alive(s, player)) return [];
+    // Mode changes and the move go in the same tick; actions apply in order.
+    const as = (mode: SpiritMode, action: Action): Action[] =>
+      s.spirits[player].mode === mode ? [action] : [{ type: 'spirit-mode', player, mode }, action];
     const foes = players(s).filter((q) => alive(s, q) && enemies(s, player, q));
     const army = Object.values(s.garrison[player]).reduce((a, b) => a + b, 0);
     if (army >= attackAt && foes.length) {
@@ -29,8 +35,14 @@ export function createBot(player: Player, seed: number) {
       const target = weakest[random() % weakest.length];
       return [{ type: 'launch', player, target }];
     }
-    const roll = random() % 10;
-    want ??= roll < 6 ? 'archer' : roll < 9 ? 'barracks' : 'knight_hall';
+    // Mostly shooters, sometimes a spawner, from its spirit's kit.
+    if (want === null) {
+      const kit = spiritDef(s, cfg, player).kit;
+      const shooters = kit.filter((id) => cfg.content.towers[id].kind === 'shooter');
+      const spawners = kit.filter((id) => cfg.content.towers[id].kind === 'spawner');
+      const pool = (random() % 10 < 6 && shooters.length) || !spawners.length ? shooters : spawners;
+      want = pool[random() % pool.length];
+    }
     if (s.gold[player] < cfg.content.towers[want].cost) return [];
     // Cells on or beside the routes enemies take to our castle.
     const goal = s.bases[player], d = distances(s, goal, blockedCells(s));
@@ -47,6 +59,6 @@ export function createBot(player: Player, seed: number) {
     }
     if (!options.length) return [];
     want = null;
-    return [options[random() % options.length]];
+    return as('cursor', options[random() % options.length]);
   };
 }

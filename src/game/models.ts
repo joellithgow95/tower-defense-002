@@ -3,7 +3,7 @@
  * Art ideas start here: change a colour or add a shape, save, and look at the game.
  */
 import * as THREE from 'three';
-import type { Player } from '../core/types';
+import type { Player, SpiritMode } from '../core/types';
 
 /** One colour per player: blue, orange, yellow, purple. Player 0's is first. */
 export const PLAYER_COLORS = [0x4da3ff, 0xff7a59, 0xffd166, 0xb07cff] as const;
@@ -108,13 +108,17 @@ function mireCursor(g: THREE.Group, color: number) {
   }
 }
 
-/** Provisional adapter; reconcile argument order and origin with the gameplay branch. */
-export function spiritModel(id: string, player: Player, form: 'walk' | 'cursor') {
+/** Height the cursor form floats at; the view only bobs it around ground level. */
+const CURSOR_HEIGHT = 0.74;
+
+/** A player's spirit, by spirit id and mode. An unknown spirit shows as a plain light. */
+export function spiritModel(id: string, mode: SpiritMode, player: Player) {
   const g = new THREE.Group();
   const color = PLAYER_COLORS[player];
-  if (id === 'wisp') (form === 'walk' ? wispWalk : wispCursor)(g, color);
-  else if (id === 'mire') (form === 'walk' ? mireWalk : mireCursor)(g, color);
+  if (id === 'wisp') (mode === 'walk' ? wispWalk : wispCursor)(g, color);
+  else if (id === 'mire') (mode === 'walk' ? mireWalk : mireCursor)(g, color);
   else spiritLight(g, color, 0.2, 0.25, 0.3);
+  if (mode === 'cursor') for (const c of g.children) c.position.y += CURSOR_HEIGHT;
   return g;
 }
 
@@ -192,3 +196,4 @@ export function rockModel(seed: number) {
   part(g, lump(0.19), 0x9aa1ad, 0.26, 0.1, 0.22).rotation.set(seed * 2.3, seed, 0);
   return g;
 }
+

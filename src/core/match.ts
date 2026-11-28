@@ -2,8 +2,8 @@
 import { createMatch, step } from './sim';
 import type { Action, Config, GameEvent, Player, State } from './types';
 
-/** Version 2 added game modes with any number of players. */
-export interface Replay { version: 2; game: string; config: Config; actions: { tick: number; action: Action }[]; ticks: number }
+/** Version 2 added game modes with any number of players; version 3 added spirits. */
+export interface Replay { version: 3; game: string; config: Config; actions: { tick: number; action: Action }[]; ticks: number }
 
 export class Match {
   state: State;
@@ -16,7 +16,7 @@ export class Match {
   }
 
   replay(game = 'dev'): Replay {
-    return structuredClone({ version: 2 as const, game, config: this.config, actions: this.log, ticks: this.state.tick });
+    return structuredClone({ version: 3 as const, game, config: this.config, actions: this.log, ticks: this.state.tick });
   }
 }
 
@@ -44,7 +44,7 @@ export function fingerprint(s: State): string {
 export function observe(s: State, player: Player) {
   return structuredClone({
     tick: s.tick, width: s.width, height: s.height, player, teams: s.teams,
-    gold: s.gold[player], garrison: s.garrison[player],
+    gold: s.gold[player], garrison: s.garrison[player], spirits: s.spirits,
     baseHealth: s.baseHealth, bases: s.bases,
     rock: s.rock, towers: s.towers, troops: s.troops, winner: s.winner,
   });

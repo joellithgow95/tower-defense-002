@@ -13,7 +13,7 @@ npm install
 npm run dev      # then open the address it prints
 ```
 
-Click your land (tinted blue) to build. Each building spreads your land a few cells further. **1-3** pick a building, **X** sells the one under the mouse, **Space** launches your troops, **T** (or clicking an enemy castle) picks who to attack, **P** pauses, **R** restarts.
+You are a spirit of the Lyth, the Wisp or the Mire (pick one at the bottom). Walk with **WASD**, the arrows, or by holding the mouse button (right button, or left away from you). Click a cell next to you to build there, or press **Q** to fly as a wisp and build anywhere on your land (tinted blue); each building spreads your land a few cells further. **1-2** pick a building, **X** sells the one under the mouse, **Space** launches your troops, **T** (or clicking an enemy castle) picks who to attack, **P** pauses, **R** restarts.
 
 ## Play online with friends
 

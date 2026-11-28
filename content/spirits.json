@@ -1,0 +1,20 @@
+{
+  "wisp": {
+    "label": "Wisp",
+    "about": "Mist and lights. Quick and light; its followers are scouts and runners.",
+    "walkSpeed": 4000,
+    "reach": 1500,
+    "kit": ["archer", "barracks"],
+    "passive": "Its troops march 15% faster.",
+    "troopSpeedPercent": 115
+  },
+  "mire": {
+    "label": "Mire",
+    "about": "Sinking and holding. Slow and sturdy; its followers are heavy and hard to move.",
+    "walkSpeed": 3000,
+    "reach": 2000,
+    "kit": ["archer", "knight_hall"],
+    "passive": "Its troops have 20% more health.",
+    "troopHealthPercent": 120
+  }
+}

@@ -4,6 +4,7 @@
  */
 import { createBot } from '../core/bot';
 import { modes } from '../core/config';
+import { withSpirits } from '../core/sim';
 import { Match, fingerprint } from '../core/match';
 import type { Action, GameEvent } from '../core/types';
 import { FINGERPRINT_EVERY, type ServerMessage, type Stamped } from './protocol';
@@ -19,7 +20,7 @@ export class Lockstep {
   private bots;
 
   constructor(start: Start) {
-    this.config = modes[start.mode].config;
+    this.config = withSpirits(modes[start.mode].config, start.spirits);
     this.match = new Match(this.config);
     // Empty seats are bots. Every browser runs the same bots with the same seed, so their moves match too.
     this.bots = start.humans.flatMap((human, p) => (human ? [] : [createBot(p, start.seed + p)]));

@@ -41,10 +41,25 @@ describe('online play', () => {
     const random = seeded(2);
     for (let turn = 0; turn < 600; turn++) {
       // Each browser acts now and then; b sends actions claiming to be player 0, which the server must correct.
-      if (turn % 7 === 0) a.send({ t: 'action', action: { type: 'build', player: 0, tower: 'archer', x: 1 + (turn % 3), y: 2 + (turn % 5) } });
-      if (turn % 11 === 0) b.send({ t: 'action', action: { type: 'build', player: 0, tower: 'barracks', x: 20 - (turn % 3), y: 3 + (turn % 7) } });
-      if (turn % 90 === 0) { a.send({ t: 'action', action: { type: 'launch', player: 0, target: 1 } }); b.send({ t: 'action', action: { type: 'launch', player: 1, target: 0 } }); }
-      if (turn % 45 === 0) a.send({ t: 'action', action: { type: 'sell', player: 0, x: 1, y: 2 } });
+      // Building far from the body needs the wisp (cursor mode); walking again in between exercises the mode switch.
+      if (turn % 7 === 0) {
+        a.send({ t: 'action', action: { type: 'spirit-mode', player: 0, mode: 'cursor' } });
+        a.send({ t: 'action', action: { type: 'build', player: 0, tower: 'archer', x: 1 + (turn % 3), y: 2 + (turn % 5) } });
+      }
+      if (turn % 11 === 0) {
+        b.send({ t: 'action', action: { type: 'spirit-mode', player: 0, mode: 'cursor' } });
+        b.send({ t: 'action', action: { type: 'build', player: 0, tower: 'archer', x: 20 - (turn % 3), y: 3 + (turn % 7) } });
+      }
+      if (turn % 90 === 0) {
+        for (const [x, player] of [[a, 0], [b, 1]] as const) {
+          x.send({ t: 'action', action: { type: 'spirit-mode', player, mode: 'walk' } });
+          x.send({ t: 'action', action: { type: 'launch', player, target: 1 - player } });
+        }
+      }
+      if (turn % 45 === 0) {
+        a.send({ t: 'action', action: { type: 'spirit-mode', player: 0, mode: 'walk' } });
+        a.send({ t: 'action', action: { type: 'sell', player: 0, x: 1, y: 4 } });
+      }
       room.turn();
       // Messages arrive late and in bursts.
       if (random() < 0.5) a.catchUp();
@@ -52,7 +67,7 @@ describe('online play', () => {
     }
     a.catchUp(); b.catchUp();
     expect(a.state.tick).toBe(b.state.tick);
-    expect(a.state.towers.some((t) => t.player === 1)).toBe(true);
+    expect(a.state.towers.filter((t) => t.player === 1).length).toBeGreaterThan(1);
     expect(fingerprint(a.state)).toBe(fingerprint(b.state));
     expect(a.desync || b.desync).toBe(false);
   });
@@ -85,6 +100,26 @@ describe('online play', () => {
     expect(fingerprint(b.state)).toBe(fingerprint(a.state));
     expect(fingerprint(c.state)).toBe(fingerprint(a.state));
     expect([a, b, c].some((x) => x.desync)).toBe(false);
+  });
+
+  it('carries spirit choices and walking to every browser', () => {
+    const room = new RoomCore(seeded(6));
+    const [a, b] = [new FakeBrowser('a', room), new FakeBrowser('b', room)];
+    a.connect(); b.connect();
+    b.send({ t: 'spirit', spirit: 'wisp' });
+    a.send({ t: 'spirit', spirit: 'heron' }); // no such spirit: ignored
+    a.send({ t: 'start' });
+    b.send({ t: 'spirit', spirit: 'mire' }); // too late: the match has started
+    // Malformed moves are cleaned up: -5 becomes -1, a made-up mode is dropped.
+    b.send({ t: 'action', action: { type: 'spirit-move', player: 0, x: -5, y: 0 } });
+    b.send({ t: 'action', action: { type: 'spirit-mode', player: 1, mode: 'swim' as 'walk' } });
+    for (let turn = 0; turn < 20; turn++) { room.turn(); a.catchUp(); b.catchUp(); }
+    for (const x of [a, b]) {
+      expect(x.state.spirits.map((sp) => sp.id)).toEqual(['wisp', 'wisp']);
+      expect(x.state.spirits[1]).toMatchObject({ dx: -1, mode: 'walk' });
+    }
+    expect(a.state.spirits[1].x).toBeLessThan(21 * 60_000);
+    expect(fingerprint(a.state)).toBe(fingerprint(b.state));
   });
 
   it('spots a desync from fingerprints', () => {

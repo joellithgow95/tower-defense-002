@@ -14,6 +14,18 @@ function direction(pad: Gamepad, deadZone: number) {
     : { x: 0, y: Math.sign(stickY) };
 }
 
+/** The direction held right now, diagonals included, for walking a spirit. */
+function heldDirection(pad: Gamepad, deadZone: number) {
+  const x = Number(pad.buttons[RIGHT]?.pressed ?? false) - Number(pad.buttons[LEFT]?.pressed ?? false);
+  const y = Number(pad.buttons[DOWN]?.pressed ?? false) - Number(pad.buttons[UP]?.pressed ?? false);
+  if (x || y) return { x, y };
+  const [stickX = 0, stickY = 0] = pad.axes;
+  if (Math.max(Math.abs(stickX), Math.abs(stickY)) < deadZone) return { x: 0, y: 0 };
+  // An axis counts once it is at least half the stronger one, so a slight lean doesn't turn a straight walk diagonal.
+  const strongest = Math.max(Math.abs(stickX), Math.abs(stickY)) / 2;
+  return { x: Math.abs(stickX) >= strongest ? Math.sign(stickX) : 0, y: Math.abs(stickY) >= strongest ? Math.sign(stickY) : 0 };
+}
+
 export function createGamepadInput() {
   let previous: boolean[] = [];
   let previousDirection = { x: 0, y: 0 };
@@ -38,6 +50,7 @@ export function createGamepadInput() {
     const input = {
       ready: true as const,
       move: step ? move : undefined,
+      held: heldDirection(pad, preferences.deadZone / 100),
       pressed,
     };
     previous = buttons;

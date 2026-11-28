@@ -1,12 +1,13 @@
 import rules from '../../content/rules.json';
 import towers from '../../content/towers.json';
 import troops from '../../content/troops.json';
+import spirits from '../../content/spirits.json';
 import rockyPass from '../../content/maps/rocky-pass.json';
 import threeCrowns from '../../content/maps/three-crowns.json';
 import fourCrossroads from '../../content/maps/four-crossroads.json';
-import type { Config, MapDef, TowerDef } from './types';
+import type { Config, MapDef, SpiritDef, TowerDef } from './types';
 
-const content = { troops, towers: towers as Record<string, TowerDef> };
+const content = { troops, towers: towers as Record<string, TowerDef>, spirits: spirits as Record<string, SpiritDef> };
 export const maps = { rockyPass: rockyPass as MapDef, threeCrowns: threeCrowns as MapDef, fourCrossroads: fourCrossroads as MapDef };
 
 /** Ways to play. `teams[p]` is player p's team: different numbers fight, equal numbers are allies. */

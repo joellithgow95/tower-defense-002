@@ -4,7 +4,7 @@
  * Keep it that way: whole numbers only, and no Math.random, Date, sin, cos or sqrt.
  */
 import { blockedCells, distances, neighbours, nextStep } from './grid';
-import type { Action, Config, GameEvent, Player, Refusal, State, Tower, Troop } from './types';
+import type { Action, Config, GameEvent, Player, Refusal, Spirit, SpiritDef, State, Tower, Troop } from './types';
 
 export const TICKS_PER_SECOND = 60;
 /** The most castles a map may have. Each player needs a colour in src/game/models.ts. */
@@ -26,7 +26,15 @@ export function castleCells(rows: string[]): number[] {
   return cells;
 }
 
-export function createMatch({ map, rules, content, teams }: Config): State {
+/** Wisp, Mire, Wisp, Mire: so in 2 v 2 each team has one of each. */
+export const defaultSpirits = (count: number): string[] => Array.from({ length: count }, (_, p) => (p % 2 ? 'mire' : 'wisp'));
+/** Each player's spirit id: the config's choice, or the default. */
+/** A config with each player's chosen spirit. */
+export const withSpirits = (config: Config, spirits: string[]): Config => ({ ...config, spirits: [...spirits] });
+export const spiritIds = (cfg: Config): string[] => cfg.spirits ?? defaultSpirits(cfg.teams.length);
+export const spiritDef = (s: State, cfg: Config, p: Player): SpiritDef => cfg.content.spirits[s.spirits[p].id];
+
+export function createMatch({ map, rules, content, teams, spirits }: Config): State {
   const height = map.rows.length, width = map.rows[0].length;
   const bases = castleCells(map.rows);
   const each = <T>(make: () => T) => bases.map(make);
@@ -41,8 +49,12 @@ export function createMatch({ map, rules, content, teams }: Config): State {
     garrison: each(() => emptyGarrison(content)),
     departures: each(() => []),
     departTimer: each(() => 0),
+    spirits: [],
     nextUid: 1, winner: null,
   };
+  // Every spirit starts standing on its castle, walking. Fixed key order, so fingerprints match.
+  const ids = spirits ?? defaultSpirits(teams.length);
+  s.spirits = bases.map((cell, p): Spirit => ({ id: ids[p], mode: 'walk', x: (cell % width) * CELL, y: Math.floor(cell / width) * CELL, dx: 0, dy: 0, wispCell: cell }));
   for (const t of map.startingTowers) addTower(s, content, t.id, t.player, t.y * width + t.x);
   return s;
 }
@@ -102,6 +114,33 @@ function nearestEnemy(s: State, player: Player, from: number, toCastles: number[
   return best;
 }
 
+/** Is `cell` within reach of where `player`'s spirit stands? Squared distances, like tower range. */
+export function inReach(s: State, cfg: Config, player: Player, cell: number): boolean {
+  const sp = s.spirits[player], reach = spiritDef(s, cfg, player).reach * UNITS_PER_THOUSANDTH;
+  const dx = (cell % s.width) * CELL - sp.x, dy = Math.floor(cell / s.width) * CELL - sp.y;
+  return dx * dx + dy * dy <= reach * reach;
+}
+
+/**
+ * What a walking spirit can act on from where it stands, nearest first (the castle first on a tie).
+ * Empty in cursor mode. Nothing acts on this list yet: it is the hook for walk-mode interactions.
+ * Map machinery (sluices, calling stones) joins it as a new `kind` with its own action, gated by `inReach`.
+ */
+export type Reachable = { kind: 'castle'; cell: number } | { kind: 'building'; cell: number };
+export function withinReach(s: State, cfg: Config, player: Player): Reachable[] {
+  const sp = s.spirits[player];
+  if (sp.mode !== 'walk' || !alive(s, player)) return [];
+  const found: (Reachable & { d: number })[] = [];
+  const distance = (cell: number) => ((cell % s.width) * CELL - sp.x) ** 2 + (Math.floor(cell / s.width) * CELL - sp.y) ** 2;
+  if (inReach(s, cfg, player, s.bases[player])) found.push({ kind: 'castle', cell: s.bases[player], d: distance(s.bases[player]) });
+  for (const t of s.towers) {
+    if (t.player === player && t.demolish === 0 && inReach(s, cfg, player, t.cell)) found.push({ kind: 'building', cell: t.cell, d: distance(t.cell) });
+  }
+  // A stable sort, and the castle went in first, so ties keep it in front.
+  found.sort((a, b) => a.d - b.d);
+  return found.map(({ kind, cell }) => ({ kind, cell }));
+}
+
 /** Distances to every castle, for one board layout. */
 const castleDistances = (s: State, blocked: boolean[]) => s.bases.map((base) => distances(s, base, blocked));
 
@@ -111,6 +150,7 @@ export function checkBuild(s: State, cfg: Config, player: Player, id: string, x:
   if (s.winner !== null) return 'game-over';
   if (!alive(s, player)) return 'knocked-out';
   if (!def) return 'unknown-tower';
+  if (!spiritDef(s, cfg, player).kit.includes(id)) return 'not-in-kit';
   if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= s.width || y >= s.height) return 'outside';
   const cell = y * s.width + x;
   if (!inTerritory(s, cfg.rules, player, cell)) return 'not-your-land';
@@ -138,15 +178,38 @@ export function checkBuild(s: State, cfg: Config, player: Player, id: string, x:
 
 function apply(s: State, cfg: Config, a: Action, events: GameEvent[]) {
   const refuse = (reason: Refusal) => events.push({ type: 'refused', action: a, reason });
+  if (!(a.player in s.bases)) return refuse('knocked-out');
+  const spirit = s.spirits[a.player];
   if (a.type === 'build') {
     const reason = checkBuild(s, cfg, a.player, a.tower, a.x, a.y);
     if (reason) return refuse(reason);
+    const cell = a.y * s.width + a.x;
+    // The wisp builds anywhere on your land; the walking body only within its reach.
+    if (spirit.mode === 'walk' && !inReach(s, cfg, a.player, cell)) return refuse('out-of-reach');
     s.gold[a.player] -= cfg.content.towers[a.tower].cost;
-    addTower(s, cfg.content, a.tower, a.player, a.y * s.width + a.x);
+    addTower(s, cfg.content, a.tower, a.player, cell);
+    // The build says where, so the wisp's every move need not be sent: it is seen where it built.
+    if (spirit.mode === 'cursor') spirit.wispCell = cell;
     return;
   }
   if (s.winner !== null) return refuse('game-over');
   if (!alive(s, a.player)) return refuse('knocked-out');
+  if (a.type === 'spirit-mode') {
+    if (a.mode !== 'walk' && a.mode !== 'cursor') return refuse('bad-move');
+    spirit.mode = a.mode;
+    // The body rests while the wisp flies, so it doesn't drift off.
+    spirit.dx = 0;
+    spirit.dy = 0;
+    return;
+  }
+  if (a.type === 'spirit-move') {
+    if (![-1, 0, 1].includes(a.x) || ![-1, 0, 1].includes(a.y)) return refuse('bad-move');
+    if (spirit.mode !== 'walk') return refuse('needs-walk');
+    spirit.dx = a.x;
+    spirit.dy = a.y;
+    return;
+  }
+  // Launching and selling work in either mode, from anywhere: the screen does them from the wisp's side.
   if (a.type === 'launch') {
     if (!(a.target in s.bases) || !alive(s, a.target) || !enemies(s, a.player, a.target)) return refuse('bad-target');
     const garrison = s.garrison[a.player];
@@ -167,6 +230,13 @@ function apply(s: State, cfg: Config, a: Action, events: GameEvent[]) {
   }
 }
 
+/** A troop's full health, after its spirit's passive. Whole numbers, rounded down. */
+export const troopHealth = (s: State, cfg: Config, p: Player, id: string) =>
+  Math.max(1, Math.floor((cfg.content.troops[id].health * (spiritDef(s, cfg, p).troopHealthPercent ?? 100)) / 100));
+/** A troop's speed, after its spirit's passive. */
+const troopSpeed = (s: State, cfg: Config, p: Player, id: string) =>
+  Math.floor((cfg.content.troops[id].speed * (spiritDef(s, cfg, p).troopSpeedPercent ?? 100)) / 100);
+
 /** Launched troops leave the castle in single file, one every `launchGapTicks`. */
 function marchOut(s: State, cfg: Config, toCastles: number[][]) {
   for (const p of players(s)) {
@@ -180,7 +250,7 @@ function marchOut(s: State, cfg: Config, toCastles: number[][]) {
     // Building never seals a castle in, so there is always a way out; wait a tick just in case.
     if (next === null) { s.departTimer[p] = 1; continue; }
     queue.shift();
-    s.troops.push({ uid: s.nextUid++, id, player: p, target, hp: cfg.content.troops[id].health, from: home, to: next, progress: 0 });
+    s.troops.push({ uid: s.nextUid++, id, player: p, target, hp: troopHealth(s, cfg, p, id), from: home, to: next, progress: 0 });
     s.departTimer[p] = queue.length ? cfg.rules.launchGapTicks : 0;
   }
 }
@@ -209,7 +279,7 @@ function moveTroops(s: State, cfg: Config, blocked: boolean[], toCastles: number
       [t.from, t.to] = [t.to, t.from];
       t.progress = CELL - t.progress;
     }
-    t.progress += cfg.content.troops[t.id].speed;
+    t.progress += troopSpeed(s, cfg, t.player, t.id);
     while (t.progress >= CELL) {
       if (t.to === goal) {
         s.baseHealth[t.target] = Math.max(0, s.baseHealth[t.target] - cfg.content.troops[t.id].damage);
@@ -259,12 +329,50 @@ function runTower(s: State, cfg: Config, tower: Tower, events: GameEvent[]) {
   }
 }
 
+/** The cell a point (in distance units) is in. Cell centres are whole multiples of CELL. */
+const cellOf = (s: State, x: number, y: number) => Math.floor((y + CELL / 2) / CELL) * s.width + Math.floor((x + CELL / 2) / CELL);
+
+/**
+ * Can `player`'s walking body step into `cell`? Rock and enemy buildings (castles and ruins included) stop it;
+ * its own and its allies' buildings don't. Troops never stop it, and it never stops troops: this is not routing.
+ * Later terrain (deep water blocks, shallows slow) joins this rule.
+ */
+export function walkable(s: State, player: Player, cell: number): boolean {
+  if (s.rock[cell]) return false;
+  const owner = s.bases.indexOf(cell);
+  if (owner >= 0) return !enemies(s, player, owner);
+  const tower = s.towers.find((t) => t.cell === cell);
+  return !tower || !enemies(s, player, tower.player);
+}
+
+/** Walking spirits move by their held direction, one axis at a time, so they slide along a wall. */
+function moveSpirits(s: State, cfg: Config) {
+  const maxX = (s.width - 1) * CELL, maxY = (s.height - 1) * CELL;
+  for (const p of players(s)) {
+    const sp = s.spirits[p];
+    if (sp.mode !== 'walk' || (!sp.dx && !sp.dy)) continue;
+    let speed = spiritDef(s, cfg, p).walkSpeed;
+    // No square roots in the core: 707/1000 is close enough to one over root two for a diagonal.
+    if (sp.dx && sp.dy) speed = Math.floor((speed * 707) / 1000);
+    // A body caught inside something (an enemy built on it) may always walk out.
+    const here = cellOf(s, sp.x, sp.y);
+    const x = Math.min(maxX, Math.max(0, sp.x + sp.dx * speed));
+    const toX = cellOf(s, x, sp.y);
+    if (toX === here || walkable(s, p, toX)) sp.x = x;
+    const y = Math.min(maxY, Math.max(0, sp.y + sp.dy * speed));
+    const from = cellOf(s, sp.x, sp.y), toY = cellOf(s, sp.x, y);
+    if (toY === from || walkable(s, p, toY)) sp.y = y;
+  }
+}
+
 /** A fallen player's troops disband and their buildings become ruins: still walls, but they do nothing. */
 function knockOut(s: State, p: Player, events: GameEvent[]) {
   s.troops = s.troops.filter((t) => t.player !== p);
   s.departures[p] = [];
   s.departTimer[p] = 0;
   for (const id of Object.keys(s.garrison[p])) s.garrison[p][id] = 0;
+  s.spirits[p].dx = 0;
+  s.spirits[p].dy = 0;
   events.push({ type: 'knocked-out', player: p });
 }
 
@@ -292,6 +400,7 @@ export function step(s: State, cfg: Config, actions: Action[] = []): GameEvent[]
   }
   s.towers = s.towers.filter((t) => !sold.has(t.uid));
 
+  moveSpirits(s, cfg);
   const blocked = blockedCells(s);
   const toCastles = castleDistances(s, blocked);
   marchOut(s, cfg, toCastles);

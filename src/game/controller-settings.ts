@@ -5,7 +5,7 @@ import {
 
 const LABELS: Record<ControllerAction, string> = {
   build: 'Build', sell: 'Sell', previous: 'Previous tower', next: 'Next tower', pause: 'Pause / resume', restart: 'Restart',
-  launch: 'Launch troops', target: 'Cycle target',
+  launch: 'Launch troops', target: 'Cycle target', mode: 'Walk / fly',
 };
 
 export function createControllerSettings(dialog: HTMLDialogElement, suspend: () => void) {

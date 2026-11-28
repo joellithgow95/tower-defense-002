@@ -7,6 +7,8 @@ export const DEFAULT_BINDINGS = {
   restart: 3,
   launch: 7,
   target: 6,
+  /** Walk as the spirit, or fly as the wisp to build. */
+  mode: 1,
 };
 
 export type ControllerAction = keyof typeof DEFAULT_BINDINGS;
@@ -18,7 +20,7 @@ export type ControllerPreferences = {
 
 export const ACTIONS = Object.keys(DEFAULT_BINDINGS) as ControllerAction[];
 export const BUTTON_LABELS: Readonly<Record<number, string>> = {
-  0: 'A / ✕', 2: 'X / □', 3: 'Y / △', 4: 'LB / L1', 5: 'RB / R1',
+  0: 'A / ✕', 1: 'B / ○', 2: 'X / □', 3: 'Y / △', 4: 'LB / L1', 5: 'RB / R1',
   6: 'LT / L2', 7: 'RT / R2', 9: 'Menu / Options', 10: 'L3', 11: 'R3',
 };
 export const SETTINGS_BUTTON = 8;
@@ -42,8 +44,8 @@ export function loadPreferences(seat?: number): ControllerPreferences {
     const saved = JSON.parse(localStorage.getItem(profileKey(seat)) ?? 'null');
     if (saved) {
       const bindings = { ...saved.bindings };
-      // Older profiles have six bindings. Preserve their choices when assigning the two new actions.
-      for (const action of ['launch', 'target'] as const) {
+      // Older profiles have fewer bindings. Preserve their choices when assigning the new actions.
+      for (const action of ['launch', 'target', 'mode'] as const) {
         if (bindings[action] !== undefined) continue;
         const used = new Set(Object.values(bindings));
         const preferred = DEFAULT_BINDINGS[action];

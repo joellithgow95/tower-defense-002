@@ -19,7 +19,7 @@ export const MAX_NAME = 20;
 export interface Stamped { tick: number; action: Action }
 
 /** A seat is a player slot in the chosen mode. An empty seat is played by a bot. */
-export interface SeatView { name: string | null; online: boolean }
+export interface SeatView { name: string | null; online: boolean; /** The seat's spirit id, bots included. */ spirit: string }
 
 export type ClientMessage =
   /** `client` is a random id the tab keeps, so a reconnect gets its seat back. `build` must match the room's. */
@@ -29,6 +29,8 @@ export type ClientMessage =
   | { t: 'sit'; seat: number | null }
   /** Host only, in the lobby. */
   | { t: 'mode'; mode: Mode }
+  /** Choose the spirit for your own seat. Lobby only. */
+  | { t: 'spirit'; spirit: string }
   | { t: 'start' }
   /** Host only, after a match: everyone back to the lobby. */
   | { t: 'lobby' }
@@ -40,7 +42,7 @@ export type ServerMessage =
   /** Who is in the room. Sent whenever it changes. */
   | { t: 'room'; phase: 'lobby' | 'playing'; mode: Mode; seats: SeatView[]; watching: string[]; you: number | null; host: boolean }
   /** A match began, or you (re)joined one: every action so far, and how far to simulate. */
-  | { t: 'start'; mode: Mode; seed: number; humans: boolean[]; actions: Stamped[]; upTo: number }
+  | { t: 'start'; mode: Mode; seed: number; humans: boolean[]; spirits: string[]; actions: Stamped[]; upTo: number }
   /** A turn closed: simulate up to `upTo`, applying these actions on their ticks. */
   | { t: 'turn'; upTo: number; actions: Stamped[] }
   | { t: 'desync'; tick: number }
