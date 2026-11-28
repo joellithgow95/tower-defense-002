@@ -1,3 +1,10 @@
+---
+id: design
+title: Design
+status: accepted
+created: 2026-11-27
+updated: 2026-11-27
+---
 # Design
 
 ## What carries over from the prototype
