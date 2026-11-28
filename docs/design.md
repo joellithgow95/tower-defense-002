@@ -9,6 +9,7 @@ updated: 2026-11-27
 
 ## What carries over from the prototype
 - Towers are walls. Troops re-route whenever the board changes. A build that would wall anyone in is refused.
+- You can build on a cell troops are walking through: they turn back and re-route. The one exception is a troop that has only just stepped out of its building.
 - Shooting towers defend; spawner buildings attack. A castle at 0 health loses.
 - Selling takes 3 seconds, so routes can't be flipped instantly. It refunds 60%.
 - Inspirations: Comet Crash first, then Desktop Tower Defense and Fieldrunners; Bloons and Kingdom Rush for tower feel.
