@@ -9,5 +9,5 @@ Each file has the frontmatter from [`docs/AGENTS.md`](../AGENTS.md), then these 
 | # | Decision | Status |
 |---|---|---|
 | [0001](0001-creative-direction.md) | Ecological restoration as creative direction | proposed |
-
-- [0002 — Cultural coexistence, contested history and strategic agency](0002-cultural-coexistence.md) (proposed)
+| [0002](0002-cultural-coexistence.md) | Cultural coexistence, contested history and strategic agency | proposed |
+| [0003](0003-controller-settings.md) | In-game controller settings | proposed |
