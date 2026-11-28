@@ -1,0 +1,2 @@
+# Narrative instructions
+Read README.md, ../vision.md and relevant decisions first. Keep protagonist identity and historical mysteries unresolved unless accepted by collaborators. Distinguish character testimony from objective world facts. Do not equate species with factions or treat colonial dispossession as a symmetrical disagreement by default. Keep choices grounded in gameplay and material consequences.
