@@ -12,3 +12,7 @@ The founding discussion proposes a fantasy region inspired by the Lithgow surnam
 - [Lythgoe](locations/lythgoe.md)
 - [Ideas](ideas/README.md)
 All entries are proposals or exploration pending team review.
+
+- [Inhabited regions](regions.md)
+
+The history of human settlement is not necessarily the history of the Lyth. See [decision 0002](../decisions/0002-cultural-coexistence.md).
