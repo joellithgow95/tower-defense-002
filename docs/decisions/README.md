@@ -9,3 +9,5 @@ Each file has the frontmatter from [`docs/AGENTS.md`](../AGENTS.md), then these 
 | # | Decision | Status |
 |---|---|---|
 | [0001](0001-creative-direction.md) | Ecological restoration as creative direction | proposed |
+
+- [0002 — Cultural coexistence, contested history and strategic agency](0002-cultural-coexistence.md) (proposed)
