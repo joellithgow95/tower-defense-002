@@ -18,7 +18,18 @@ export interface Rules {
   /** When you launch, one troop marches out of your castle every this many ticks. */
   launchGapTicks: number;
 }
-export interface MapDef { name: string; startingTowers: { player: Player; id: string; x: number; y: number }[]; rows: string[] }
+export interface MapDef {
+  /** The map's file name in content/maps/ without ".json". Filled in when the map is loaded, so replays and bug reports say which map they were on. */
+  id?: string;
+  /** The name players see. */
+  name: string;
+  /** A sentence or two shown when choosing a map. Required in content/maps/; optional for maps made in tests. */
+  description?: string;
+  /** The game modes (src/core/config.ts) this map can be played as. Required in content/maps/. */
+  modes?: string[];
+  startingTowers: { player: Player; id: string; x: number; y: number }[];
+  rows: string[];
+}
 export interface Content { troops: Record<string, TroopDef>; towers: Record<string, TowerDef> }
 /** `teams[p]` is player p's team, one entry per castle on the map. [0, 1, 2] is a free-for-all; [0, 0, 1] is two against one. */
 export interface Config { map: MapDef; rules: Rules; content: Content; teams: number[] }

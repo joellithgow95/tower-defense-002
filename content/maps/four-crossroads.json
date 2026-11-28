@@ -1,5 +1,7 @@
 {
   "name": "Four Crossroads",
+  "description": "Four castles in the corners and a ring of rocks in the middle. Play everyone for themselves, or two against two with diagonal allies.",
+  "modes": ["fourWay", "twoVsTwo"],
   "startingTowers": [
     {
       "player": 0,

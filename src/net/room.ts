@@ -2,7 +2,7 @@
  * One game room's rules, with no networking: the server (worker/index.ts) feeds it messages and a clock,
  * and tests drive it directly. It never runs the game; it only orders actions and keeps the turn clock.
  */
-import { type Mode, modes } from '../core/config';
+import { MAP_ID, type Mode, defaultChoice, isMode, modes } from '../core/config';
 import type { Action } from '../core/types';
 import { type ClientMessage, MAX_NAME, type ServerMessage, type Stamped, TURN_TICKS } from './protocol';
 
@@ -14,7 +14,12 @@ interface Person { name: string; send: (m: ServerMessage) => void; online: boole
 
 export class RoomCore {
   phase: 'lobby' | 'playing' = 'lobby';
-  mode: Mode = 'duel';
+  /**
+   * The map's id and the mode. The room has no map files (the server isn't built with them), so it checks only
+   * that the id looks like one; the host's game offers only maps that support the mode.
+   */
+  map: string = defaultChoice.map;
+  mode: Mode = defaultChoice.mode;
   /** seats[p] is the client id sitting as player p, or null for a bot. */
   seats: (string | null)[] = [null, null];
   people = new Map<string, Person>();
@@ -82,9 +87,10 @@ export class RoomCore {
       this.seats = this.seats.map((s) => (s === client ? null : s));
       if (m.seat !== null) this.seats[m.seat] = client;
       this.broadcastRoom();
-    } else if (m.t === 'mode' && isHost && this.phase === 'lobby' && m.mode in modes) {
+    } else if (m.t === 'setup' && isHost && this.phase === 'lobby' && isMode(m.mode) && typeof m.map === 'string' && MAP_ID.test(m.map) && m.map.length <= 40) {
+      this.map = m.map;
       this.mode = m.mode;
-      const size = modes[m.mode].config.teams.length;
+      const size = modes[m.mode].teams.length;
       const sitting = this.seats.filter((s) => s !== null);
       this.seats = Array.from({ length: size }, (_, i) => sitting[i] ?? null);
       this.broadcastRoom();
@@ -138,7 +144,7 @@ export class RoomCore {
   }
 
   private startMessage(): ServerMessage {
-    return { t: 'start', mode: this.mode, seed: this.seed, humans: this.humans, actions: this.actions.filter((a) => a.tick < this.upTo), upTo: this.upTo };
+    return { t: 'start', map: this.map, mode: this.mode, seed: this.seed, humans: this.humans, actions: this.actions.filter((a) => a.tick < this.upTo), upTo: this.upTo };
   }
 
   private anyoneOnline() { return [...this.people.values()].some((p) => p.online); }
@@ -154,7 +160,7 @@ export class RoomCore {
     for (const [id, p] of this.people) {
       if (!p.online) continue;
       const seat = this.seats.indexOf(id);
-      p.send({ t: 'room', phase: this.phase, mode: this.mode, seats, watching, you: seat >= 0 ? seat : null, host: id === this.host });
+      p.send({ t: 'room', phase: this.phase, map: this.map, mode: this.mode, seats, watching, you: seat >= 0 ? seat : null, host: id === this.host });
     }
   }
 }

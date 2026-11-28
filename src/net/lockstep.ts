@@ -1,25 +1,27 @@
 /**
  * The browser's half of online play: runs the match only as far as the server has confirmed,
  * applying each action on the tick the server stamped it with. No networking here, so tests can drive it.
+ * The caller turns the start message's map and mode into a config (src/core/maps.ts), so this file needs no map files.
  */
 import { createBot } from '../core/bot';
-import { modes } from '../core/config';
 import { Match, fingerprint } from '../core/match';
-import type { Action, GameEvent } from '../core/types';
+import type { Action, Config, GameEvent } from '../core/types';
 import { FINGERPRINT_EVERY, type ServerMessage, type Stamped } from './protocol';
 
 type Start = Extract<ServerMessage, { t: 'start' }>;
 
 export class Lockstep {
   readonly match: Match;
-  readonly config;
   /** The server has confirmed every tick before this one. */
   upTo: number;
   private due = new Map<number, Action[]>();
   private bots;
 
-  constructor(start: Start) {
-    this.config = modes[start.mode].config;
+  constructor(start: Start, readonly config: Config) {
+    // Every browser must play the same map with the same players, or the matches drift apart.
+    if (config.map.id !== start.map || config.teams.length !== start.humans.length) {
+      throw new Error(`This room plays ${start.map} with ${start.humans.length} players, not ${config.map.id} with ${config.teams.length}.`);
+    }
     this.match = new Match(this.config);
     // Empty seats are bots. Every browser runs the same bots with the same seed, so their moves match too.
     this.bots = start.humans.flatMap((human, p) => (human ? [] : [createBot(p, start.seed + p)]));

@@ -1,6 +1,7 @@
 /** Online play with no network: a real RoomCore, several Lockstep browsers, and messages delivered late or in bursts. */
 import { describe, expect, it } from 'vitest';
 import { fingerprint } from '../src/core/match';
+import { configFor } from '../src/core/maps';
 import { Lockstep } from '../src/net/lockstep';
 import type { ClientMessage, ServerMessage } from '../src/net/protocol';
 import { RoomCore } from '../src/net/room';
@@ -18,7 +19,7 @@ class FakeBrowser {
   catchUp() {
     for (const m of this.inbox.splice(0)) {
       if (m.t === 'room') this.seat = m.you;
-      if (m.t === 'start') this.game = new Lockstep(m);
+      if (m.t === 'start') this.game = new Lockstep(m, configFor(m));
       if (m.t === 'turn') this.game?.receive(m);
       if (m.t === 'desync') this.desync = true;
     }
@@ -59,11 +60,9 @@ describe('online play', () => {
 
   it('catches up a tab that was hidden, and a browser that reconnects mid-match', () => {
     const room = new RoomCore(seeded(3));
-    room.mode = 'ffa';
-    room.seats = [null, null, null];
     const [a, b, c] = ['a', 'b', 'c'].map((id) => new FakeBrowser(id, room));
     a.connect(); b.connect();
-    a.send({ t: 'mode', mode: 'ffa' });
+    a.send({ t: 'setup', map: 'three-crowns', mode: 'ffa' });
     a.send({ t: 'start' }); // seat 2 is a bot
     for (let turn = 0; turn < 900; turn++) {
       if (turn % 13 === 0) a.send({ t: 'action', action: { type: 'build', player: 0, tower: 'archer', x: 3, y: 10 + (turn % 3) } });
@@ -109,5 +108,32 @@ describe('online play', () => {
     expect(room.phase).toBe('lobby');
     a.send({ t: 'start' });
     expect(room.phase).toBe('playing');
+  });
+
+  it('plays the map the host picks, on every browser, with a seat for each player', () => {
+    const room = new RoomCore(seeded(7));
+    const [a, b] = [new FakeBrowser('a', room), new FakeBrowser('b', room)];
+    a.connect(); b.connect();
+    b.send({ t: 'setup', map: 'four-crossroads', mode: 'twoVsTwo' });
+    expect([room.map, room.mode]).toEqual(['rocky-pass', 'duel']);
+    a.send({ t: 'setup', map: 'Not A Map!', mode: 'twoVsTwo' });
+    expect(room.map).toBe('rocky-pass');
+    a.send({ t: 'setup', map: 'four-crossroads', mode: 'twoVsTwo' });
+    a.catchUp(); b.catchUp();
+    expect(room.seats).toHaveLength(4);
+    a.send({ t: 'start' });
+    for (let turn = 0; turn < 300; turn++) {
+      if (turn % 40 === 0) a.send({ t: 'action', action: { type: 'build', player: 0, tower: 'archer', x: 4, y: 4 + (turn % 3) } });
+      room.turn();
+      a.catchUp(); b.catchUp();
+    }
+    for (const browser of [a, b]) {
+      expect(browser.game!.config.map.id).toBe('four-crossroads');
+      expect(browser.game!.config.teams).toEqual([0, 0, 1, 1]);
+      expect(browser.state.bases).toHaveLength(4);
+    }
+    expect(fingerprint(a.state)).toBe(fingerprint(b.state));
+    // A bug report from either browser says which map it was.
+    expect(a.game!.match.replay().config.map.id).toBe('four-crossroads');
   });
 });

@@ -1,5 +1,7 @@
 {
   "name": "Three Crowns",
+  "description": "Three castles in a triangle around a rocky centre. Play everyone for themselves, or two against one.",
+  "modes": ["ffa", "twoVsOne", "oneVsTwo"],
   "startingTowers": [
     {"player": 0, "id": "barracks", "x": 4, "y": 12},
     {"player": 1, "id": "barracks", "x": 18, "y": 12},
