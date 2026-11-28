@@ -13,7 +13,13 @@ npm install
 npm run dev      # then open the address it prints
 ```
 
-Click your land (tinted blue) to build. Each building spreads your land a few cells further. **1-3** pick a building, **X** sells the one under the mouse, **P** pauses, **R** restarts.
+Click your land (tinted blue) to build. Each building spreads your land a few cells further. **1-3** pick a building, **X** sells the one under the mouse, **Space** launches your troops, **T** (or clicking an enemy castle) picks who to attack, **P** pauses, **R** restarts.
+
+## Play online with friends
+
+Go to **https://play.joellithgow.com**, press **Play online** and send your friends the invite link. Everyone picks a seat; empty seats are bots. The host picks the mode and starts. If you drop out, open the link again: you get your seat back.
+
+To try online play on your own computer: `npm run online`, then open the address it prints in two tabs.
 
 ## Found a bug or have an idea?
 
@@ -31,6 +37,7 @@ Start with [your first change](docs/first-change.md). You don't need to know how
 | `npm run check` | All tests, type check and a production build |
 | `npm run sim -- 20` | 20 bot-against-bot matches with no graphics (`npm run sim -- 20 ffa` for another mode in `src/core/config.ts`) |
 | `npm run replay -- report.json` | Re-run a bug report |
+| `npm run online` | Build, then run the online server (Cloudflare's `wrangler dev`) on your computer |
 
 ## Where things are
 

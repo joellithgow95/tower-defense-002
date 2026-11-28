@@ -127,13 +127,13 @@ export function createView(canvas: HTMLCanvasElement) {
 
   /** Fallen players have no land. `me` sees the no-build rings round their own enemies' castles. */
   function drawLand(state: State, cfg: Config, me: Player) {
-    const key = state.towers.filter((t) => t.demolish === 0).map((t) => t.uid).join() + '|' + state.baseHealth.map((h) => h > 0).join();
+    const key = `${me}|${state.baseHealth.map((h) => h > 0).join()}|${state.towers.filter((t) => t.demolish === 0).map((t) => t.uid).join()}`;
     if (key === landKey) return;
     landKey = key;
     state.rock.forEach((rock, cell) => {
       const open = !rock && !state.bases.includes(cell);
       for (const p of players(state)) land[p][cell].visible = open && alive(state, p) && inTerritory(state, cfg.rules, p, cell);
-      noBuild[cell].visible = open && cfg.rules.castleNoBuildRadius > 0 && nearEnemyCastle(state, cfg.rules, me, cell);
+      noBuild[cell].visible = open && me >= 0 && cfg.rules.castleNoBuildRadius > 0 && nearEnemyCastle(state, cfg.rules, me, cell);
     });
   }
 
