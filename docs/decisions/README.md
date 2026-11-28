@@ -1,3 +1,11 @@
-# Creative decisions
-Use numbered Markdown records with status, date, context, decision, rationale, implications and open questions. Human collaborators accept decisions; record supersession rather than deleting history. Update related domain documents after acceptance.
-- [0001 — Ecological restoration as creative direction](0001-creative-direction.md) (proposed)
+# Decisions
+
+One numbered file per significant decision: `0002-short-name.md`, the next free number. Never reuse or renumber.
+
+Each file has the frontmatter from [`docs/AGENTS.md`](../AGENTS.md), then these sections: Context, Decision, Rationale, Alternatives, Implications, Open questions.
+
+**How a decision gets accepted:** anyone opens a PR that changes its `status` to `accepted`, and it is accepted when Joel merges that PR. A replaced decision becomes `superseded` and links to its replacement; never delete it.
+
+| # | Decision | Status |
+|---|---|---|
+| [0001](0001-creative-direction.md) | Ecological restoration as creative direction | proposed |
