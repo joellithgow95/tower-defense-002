@@ -3,6 +3,7 @@
  * and tests drive it directly. It never runs the game; it only orders actions and keeps the turn clock.
  */
 import { type Mode, modes } from '../core/config';
+import spiritContent from '../../content/spirits.json';
 import { defaultSpirits } from '../core/sim';
 import type { Action } from '../core/types';
 import { type ClientMessage, MAX_NAME, type ServerMessage, type Stamped, TURN_TICKS } from './protocol';
@@ -94,7 +95,7 @@ export class RoomCore {
       this.broadcastRoom();
     } else if (m.t === 'spirit' && this.phase === 'lobby') {
       const seat = this.seats.indexOf(client);
-      if (seat < 0 || typeof m.spirit !== 'string' || !(m.spirit in modes[this.mode].config.content.spirits)) return;
+      if (seat < 0 || typeof m.spirit !== 'string' || !(m.spirit in spiritContent)) return;
       this.spirits[seat] = m.spirit;
       this.broadcastRoom();
     } else if (m.t === 'start' && isHost && this.phase === 'lobby') {

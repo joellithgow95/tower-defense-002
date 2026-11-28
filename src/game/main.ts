@@ -198,7 +198,7 @@ function restart(next: Mode = mode) {
   }
   mode = next;
   const seed = Date.now();
-  const nextConfig = configFor(mode);
+  const nextConfig = spiritConfig(mode);
   show(new Match(nextConfig), nextConfig);
   bots = players(match.state).map((p) => createBot(p, seed + p));
   queued = [];
@@ -212,7 +212,7 @@ function restart(next: Mode = mode) {
 }
 
 /** A mode's config with this screen's spirit choices: yours offline, each seat's in local multiplayer. */
-function configFor(next: Mode): Config {
+function spiritConfig(next: Mode): Config {
   const base = modes[next].config;
   const spirits = defaultSpirits(base.teams.length);
   if (local) localSpirits.forEach((id, p) => { if (p < spirits.length) spirits[p] = id; });
