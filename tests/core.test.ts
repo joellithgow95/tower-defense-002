@@ -8,9 +8,8 @@ import { problems } from '../src/core/validate';
 const quiet = { ...cfg, map: { ...cfg.map, startingTowers: [] } };
 const corridor = { ...cfg, rules: { ...cfg.rules, castleNoBuildRadius: 0 }, map: { name: 'corridor', startingTowers: [], rows: ['######', '1....2', '######'] } };
 
-/** Spirits start walking on their castle. Building needs the wisp: fly first, in the same tick. */
+/** Spirits start walking on their castle, where they can only build within reach. Fly first to build anywhere on your land. */
 const fly = (player = 0) => ({ type: 'spirit-mode' as const, player, mode: 'cursor' as const });
-const walk = (player = 0) => ({ type: 'spirit-mode' as const, player, mode: 'walk' as const });
 
 function botMatch(ticks: number) {
   const match = new Match(cfg);
@@ -67,8 +66,7 @@ describe('building', () => {
   it('refunds after the demolish delay', () => {
     const s = createMatch(quiet);
     step(s, quiet, [fly(), { type: 'build', player: 0, tower: 'archer', x: 1, y: 4 }]);
-    // The spirit's body is still on the castle at x 0, y 5: the tower is one diagonal step away, within the Wisp's reach.
-    step(s, quiet, [walk(), { type: 'sell', player: 0, x: 1, y: 4 }]);
+    step(s, quiet, [{ type: 'sell', player: 0, x: 1, y: 4 }]);
     const before = s.gold[0];
     for (let i = 0; i < quiet.rules.demolishTicks; i++) step(s, quiet);
     expect(s.towers).toHaveLength(0);
@@ -94,8 +92,7 @@ describe('land', () => {
   it('stops spreading from a building once it is being sold', () => {
     const s = createMatch(rich);
     step(s, rich, [fly(), { type: 'build', player: 0, tower: 'archer', x: 3, y: 5 }]);
-    s.spirits[0].x = 2 * CELL;
-    step(s, rich, [walk(), { type: 'sell', player: 0, x: 3, y: 5 }]);
+    step(s, rich, [{ type: 'sell', player: 0, x: 3, y: 5 }]);
     expect(s.towers[0].demolish).toBeGreaterThan(0);
     expect(checkBuild(s, rich, 0, 'archer', 6, 5)).toBe('not-your-land');
   });

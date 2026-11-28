@@ -45,7 +45,6 @@ updated: 2026-11-27
 - Next: buildings get health and shooters can hit enemy buildings, never the castle, so a creeping front can be pushed back.
 
 ## How this version differs for now
-- Each player is a spirit (Wisp or Mire) that walks the board and flies as a wisp to build. Launching and selling now need your spirit walking within reach. Exploratory, see [spirits](gameplay/spirits.md).
 - The board is no longer split in halves.
 - The board is the prototype's default turned sideways for desktop.
 - Shots hit instantly; the arrow is only visual. (The prototype's arrows travelled.)

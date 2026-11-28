@@ -220,6 +220,13 @@ export function createView(canvas: HTMLCanvasElement) {
 
   const ray = new THREE.Raycaster();
   const floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  /** Where on the board the pointer is, in cells (fractions too), or null off the floor plane. */
+  function boardAt(clientX: number, clientY: number): { x: number; y: number } | null {
+    ray.setFromCamera(new THREE.Vector2((clientX / canvas.clientWidth) * 2 - 1, 1 - (clientY / canvas.clientHeight) * 2), camera);
+    const hit = ray.ray.intersectPlane(floor, new THREE.Vector3());
+    return hit ? { x: hit.x + (size.width - 1) / 2, y: hit.z + (size.height - 1) / 2 } : null;
+  }
+
   function cellAt(clientX: number, clientY: number): { x: number; y: number } | null {
     ray.setFromCamera(new THREE.Vector2((clientX / canvas.clientWidth) * 2 - 1, 1 - (clientY / canvas.clientHeight) * 2), camera);
     const hit = ray.ray.intersectPlane(floor, new THREE.Vector3());
@@ -248,5 +255,5 @@ export function createView(canvas: HTMLCanvasElement) {
   }
 
   addEventListener('resize', frame);
-  return { reset, show, draw, cellAt, highlight };
+  return { reset, show, draw, cellAt, boardAt, highlight };
 }

@@ -123,7 +123,8 @@ export function inReach(s: State, cfg: Config, player: Player, cell: number): bo
 
 /**
  * What a walking spirit can act on from where it stands, nearest first (the castle first on a tie).
- * Empty in cursor mode. Map machinery (sluices, calling stones) joins this list as a new `kind`.
+ * Empty in cursor mode. Nothing acts on this list yet: it is the hook for walk-mode interactions.
+ * Map machinery (sluices, calling stones) joins it as a new `kind` with its own action, gated by `inReach`.
  */
 export type Reachable = { kind: 'castle'; cell: number } | { kind: 'building'; cell: number };
 export function withinReach(s: State, cfg: Config, player: Player): Reachable[] {
@@ -182,12 +183,13 @@ function apply(s: State, cfg: Config, a: Action, events: GameEvent[]) {
   if (a.type === 'build') {
     const reason = checkBuild(s, cfg, a.player, a.tower, a.x, a.y);
     if (reason) return refuse(reason);
-    // Only the wisp builds. The build says where, so the wisp's every move need not be sent.
-    if (spirit.mode !== 'cursor') return refuse('needs-cursor');
-    s.gold[a.player] -= cfg.content.towers[a.tower].cost;
     const cell = a.y * s.width + a.x;
+    // The wisp builds anywhere on your land; the walking body only within its reach.
+    if (spirit.mode === 'walk' && !inReach(s, cfg, a.player, cell)) return refuse('out-of-reach');
+    s.gold[a.player] -= cfg.content.towers[a.tower].cost;
     addTower(s, cfg.content, a.tower, a.player, cell);
-    spirit.wispCell = cell;
+    // The build says where, so the wisp's every move need not be sent: it is seen where it built.
+    if (spirit.mode === 'cursor') spirit.wispCell = cell;
     return;
   }
   if (s.winner !== null) return refuse('game-over');
@@ -207,10 +209,8 @@ function apply(s: State, cfg: Config, a: Action, events: GameEvent[]) {
     spirit.dy = a.y;
     return;
   }
-  // Launching and selling happen where the spirit stands.
-  if (spirit.mode !== 'walk') return refuse('needs-walk');
+  // Launching and selling work in either mode, from anywhere: the screen does them from the wisp's side.
   if (a.type === 'launch') {
-    if (!inReach(s, cfg, a.player, s.bases[a.player])) return refuse('out-of-reach');
     if (!(a.target in s.bases) || !alive(s, a.target) || !enemies(s, a.player, a.target)) return refuse('bad-target');
     const garrison = s.garrison[a.player];
     let count = 0;
@@ -226,7 +226,6 @@ function apply(s: State, cfg: Config, a: Action, events: GameEvent[]) {
   } else {
     const tower = s.towers.find((t) => t.cell === a.y * s.width + a.x && t.player === a.player && t.demolish === 0);
     if (!tower) return refuse('nothing-to-sell');
-    if (!inReach(s, cfg, a.player, tower.cell)) return refuse('out-of-reach');
     tower.demolish = cfg.rules.demolishTicks;
   }
 }
@@ -330,7 +329,23 @@ function runTower(s: State, cfg: Config, tower: Tower, events: GameEvent[]) {
   }
 }
 
-/** Walking spirits move by their held direction. They float over rock and buildings and never block a route. */
+/** The cell a point (in distance units) is in. Cell centres are whole multiples of CELL. */
+const cellOf = (s: State, x: number, y: number) => Math.floor((y + CELL / 2) / CELL) * s.width + Math.floor((x + CELL / 2) / CELL);
+
+/**
+ * Can `player`'s walking body step into `cell`? Rock and enemy buildings (castles and ruins included) stop it;
+ * its own and its allies' buildings don't. Troops never stop it, and it never stops troops: this is not routing.
+ * Later terrain (deep water blocks, shallows slow) joins this rule.
+ */
+export function walkable(s: State, player: Player, cell: number): boolean {
+  if (s.rock[cell]) return false;
+  const owner = s.bases.indexOf(cell);
+  if (owner >= 0) return !enemies(s, player, owner);
+  const tower = s.towers.find((t) => t.cell === cell);
+  return !tower || !enemies(s, player, tower.player);
+}
+
+/** Walking spirits move by their held direction, one axis at a time, so they slide along a wall. */
 function moveSpirits(s: State, cfg: Config) {
   const maxX = (s.width - 1) * CELL, maxY = (s.height - 1) * CELL;
   for (const p of players(s)) {
@@ -339,8 +354,14 @@ function moveSpirits(s: State, cfg: Config) {
     let speed = spiritDef(s, cfg, p).walkSpeed;
     // No square roots in the core: 707/1000 is close enough to one over root two for a diagonal.
     if (sp.dx && sp.dy) speed = Math.floor((speed * 707) / 1000);
-    sp.x = Math.min(maxX, Math.max(0, sp.x + sp.dx * speed));
-    sp.y = Math.min(maxY, Math.max(0, sp.y + sp.dy * speed));
+    // A body caught inside something (an enemy built on it) may always walk out.
+    const here = cellOf(s, sp.x, sp.y);
+    const x = Math.min(maxX, Math.max(0, sp.x + sp.dx * speed));
+    const toX = cellOf(s, x, sp.y);
+    if (toX === here || walkable(s, p, toX)) sp.x = x;
+    const y = Math.min(maxY, Math.max(0, sp.y + sp.dy * speed));
+    const from = cellOf(s, sp.x, sp.y), toY = cellOf(s, sp.x, y);
+    if (toY === from || walkable(s, p, toY)) sp.y = y;
   }
 }
 

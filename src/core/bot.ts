@@ -1,6 +1,6 @@
 /**
  * A very simple opponent: now and then it builds near an enemy's route, and it attacks the weakest enemy once its garrison is big enough.
- * Its spirit never walks: it stays on its castle and switches mode for each move, flying to build and walking to launch.
+ * Its spirit never walks: it stays on its castle and flies as the wisp to build anywhere on its land.
  */
 import { blockedCells, distances, nextStep } from './grid';
 import { alive, checkBuild, enemies, players, spiritDef } from './sim';
@@ -33,7 +33,7 @@ export function createBot(player: Player, seed: number) {
       // The weakest castle; a tie is broken at random, so bots don't all pick on the same player.
       const weakest = foes.filter((q) => s.baseHealth[q] === Math.min(...foes.map((f) => s.baseHealth[f])));
       const target = weakest[random() % weakest.length];
-      return as('walk', { type: 'launch', player, target });
+      return [{ type: 'launch', player, target }];
     }
     // Mostly shooters, sometimes a spawner, from its spirit's kit.
     if (want === null) {

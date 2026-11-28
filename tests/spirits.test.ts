@@ -85,13 +85,20 @@ describe('walking', () => {
   });
 });
 
-describe('cursor mode and kits', () => {
-  it('builds only as the wisp, and the wisp is seen where it built', () => {
+describe('building, both ways', () => {
+  it('builds anywhere on your land as the wisp, and the wisp is seen where it built', () => {
     const s = createMatch(rich);
-    expect(reason(step(s, rich, [{ type: 'build', player: 0, tower: 'archer', x: 2, y: 3 }]))).toBe('needs-cursor');
-    step(s, rich, [fly(), { type: 'build', player: 0, tower: 'archer', x: 2, y: 3 }]);
+    step(s, rich, [fly(), { type: 'build', player: 0, tower: 'archer', x: 3, y: 2 }]);
     expect(s.towers).toHaveLength(1);
-    expect(s.spirits[0].wispCell).toBe(3 * s.width + 2);
+    expect(s.spirits[0].wispCell).toBe(2 * s.width + 3);
+  });
+  it('builds while walking, but only within reach of the body', () => {
+    const s = createMatch(rich);
+    // The body stands on the castle at x 0, y 5. The Wisp reaches 1.5 cells.
+    expect(reason(step(s, rich, [{ type: 'build', player: 0, tower: 'archer', x: 3, y: 2 }]))).toBe('out-of-reach');
+    step(s, rich, [{ type: 'build', player: 0, tower: 'archer', x: 1, y: 4 }]);
+    expect(s.towers).toHaveLength(1);
+    expect(s.spirits[0].wispCell).toBe(s.bases[0]);
   });
   it('builds only from its own kit', () => {
     const s = createMatch(rich);
@@ -102,32 +109,80 @@ describe('cursor mode and kits', () => {
   });
 });
 
-describe('reach', () => {
-  it('launches only while walking within reach of its castle', () => {
-    const s = createMatch(quiet);
-    s.garrison[0].soldier = 2;
-    s.spirits[0].x = 3 * CELL;
-    expect(reason(step(s, quiet, [{ type: 'launch', player: 0, target: 1 }]))).toBe('out-of-reach');
-    s.spirits[0].x = CELL;
-    expect(reason(step(s, quiet, [fly(), { type: 'launch', player: 0, target: 1 }]))).toBe('needs-walk');
-    expect(step(s, quiet, [walk(), { type: 'launch', player: 0, target: 1 }])).toContainEqual(expect.objectContaining({ type: 'launched', count: 2 }));
-  });
-  it('sells only a building within reach', () => {
+describe('launching and selling', () => {
+  it('work in either mode, from anywhere', () => {
     const s = createMatch(rich);
-    step(s, rich, [fly(), { type: 'build', player: 0, tower: 'archer', x: 3, y: 5 }, walk()]);
-    expect(reason(step(s, rich, [{ type: 'sell', player: 0, x: 3, y: 5 }]))).toBe('out-of-reach');
-    s.spirits[0].x = 2 * CELL;
-    step(s, rich, [{ type: 'sell', player: 0, x: 3, y: 5 }]);
+    s.garrison[0].soldier = 2;
+    s.spirits[0].x = 10 * CELL;
+    expect(step(s, rich, [{ type: 'launch', player: 0, target: 1 }])).toContainEqual(expect.objectContaining({ type: 'launched', count: 2 }));
+    step(s, rich, [fly(), { type: 'build', player: 0, tower: 'archer', x: 3, y: 5 }, { type: 'sell', player: 0, x: 3, y: 5 }]);
     expect(s.towers[0].demolish).toBeGreaterThan(0);
   });
+});
+
+describe('reach', () => {
   it('lists what is in reach, nearest first, and nothing while flying', () => {
     const s = createMatch(rich);
-    step(s, rich, [fly(), { type: 'build', player: 0, tower: 'archer', x: 1, y: 5 }, walk()]);
+    step(s, rich, [{ type: 'build', player: 0, tower: 'archer', x: 1, y: 5 }]);
     expect(withinReach(s, rich, 0)).toEqual([{ kind: 'castle', cell: s.bases[0] }, { kind: 'building', cell: 5 * s.width + 1 }]);
     s.spirits[0].x = CELL;
     expect(withinReach(s, rich, 0)[0]).toEqual({ kind: 'building', cell: 5 * s.width + 1 });
     step(s, rich, [fly()]);
     expect(withinReach(s, rich, 0)).toEqual([]);
+  });
+});
+
+describe('what stops a walking body', () => {
+  // A small board: rock at x 2, y 0; player 0's castle at x 0, y 1; player 1's at x 4, y 1.
+  const tiny = { ...rich, map: { name: 'tiny', startingTowers: [], rows: ['..#..', '1...2', '.....'] }, rules: { ...rich.rules, castleNoBuildRadius: 0, buildRadius: 4 } };
+  const walkFor = (s: ReturnType<typeof createMatch>, dir: [number, number], ticks: number, player = 0) => {
+    step(s, tiny, [move(dir[0], dir[1], player)]);
+    for (let i = 1; i < ticks; i++) step(s, tiny);
+  };
+  it('is stopped by rock', () => {
+    const s = createMatch(tiny);
+    s.spirits[0].x = CELL;
+    s.spirits[0].y = 0;
+    walkFor(s, [1, 0], 60);
+    expect(s.spirits[0].x).toBeLessThan(2 * CELL - CELL / 2);
+  });
+  it('is stopped by enemy buildings and castles, but not its own', () => {
+    const s = createMatch(tiny);
+    step(s, tiny, [fly(), { type: 'build', player: 0, tower: 'archer', x: 1, y: 2 }, walk(),
+      fly(1), { type: 'build', player: 1, tower: 'archer', x: 3, y: 2 }, walk(1)]);
+    s.spirits[0].y = 2 * CELL;
+    walkFor(s, [1, 0], 60);
+    // Walked through its own archer at x 1, stopped before the enemy's at x 3.
+    expect(s.spirits[0].x).toBeGreaterThan(CELL);
+    expect(s.spirits[0].x).toBeLessThan(3 * CELL - CELL / 2);
+    s.spirits[0].y = CELL;
+    walkFor(s, [1, 0], 60);
+    expect(s.spirits[0].x).toBeLessThan(4 * CELL - CELL / 2);
+  });
+  it('slides along rock when walking diagonally into it', () => {
+    const s = createMatch(tiny);
+    s.spirits[0].x = CELL;
+    s.spirits[0].y = CELL;
+    walkFor(s, [1, -1], 30);
+    // It never steps into the rock at x 2, y 0: it slides along underneath it instead.
+    expect(s.spirits[0].x).toBeGreaterThan(2 * CELL);
+    expect(s.spirits[0].y).toBeGreaterThanOrEqual(CELL / 2);
+  });
+  it('lets allies walk through each other\'s buildings', () => {
+    const allies = { ...tiny, teams: [0, 0], map: { ...tiny.map, rows: ['.....', '1...2', '.....', '..3..'] }, rules: { ...tiny.rules } };
+    const three = { ...allies, teams: [0, 0, 1] };
+    const s = createMatch(three);
+    step(s, three, [fly(1), { type: 'build', player: 1, tower: 'archer', x: 2, y: 1 }]);
+    walkFor(s, [1, 0], 60);
+    expect(s.spirits[0].x).toBeGreaterThan(2 * CELL);
+  });
+  it('can walk out of a cell an enemy built on', () => {
+    const s = createMatch(tiny);
+    s.spirits[0].x = 2 * CELL;
+    s.spirits[0].y = 2 * CELL;
+    s.towers.push({ uid: 99, id: 'archer', player: 1, cell: 2 * 5 + 2, timer: 1, demolish: 0 });
+    walkFor(s, [-1, 0], 30);
+    expect(s.spirits[0].x).toBeLessThan(2 * CELL);
   });
 });
 
@@ -156,7 +211,8 @@ describe('determinism', () => {
     const dirs = [[1, 0], [0, 1], [-1, -1], [1, 1], [0, 0], [-1, 0]];
     while (match.state.tick < 60 * 90 && match.state.winner === null) {
       const t = match.state.tick;
-      const extra: Action[] = t % 47 === 0 ? [move(dirs[(t / 47) % dirs.length][0], dirs[(t / 47) % dirs.length][1], 1)] : [];
+      // The bot flies to build, so walk again before each move.
+      const extra: Action[] = t % 47 === 0 ? [walk(1), move(dirs[(t / 47) % dirs.length][0], dirs[(t / 47) % dirs.length][1], 1)] : [];
       match.step([...extra, ...bots.flatMap((b) => b(match.state, config))]);
     }
     return match;
@@ -166,7 +222,7 @@ describe('determinism', () => {
   });
   it('replays walking and building to exactly the same state', () => {
     const match = wander(withSpirits(cfg, ['mire', 'wisp']));
-    expect(match.state.spirits[1].x).not.toBe(21 * CELL);
+    expect([match.state.spirits[1].x, match.state.spirits[1].y]).not.toEqual([21 * CELL, 6 * CELL]);
     expect(match.state.towers.length).toBeGreaterThan(2);
     const replay = JSON.parse(JSON.stringify(match.replay()));
     expect(replay.version).toBe(3);

@@ -41,7 +41,7 @@ describe('online play', () => {
     const random = seeded(2);
     for (let turn = 0; turn < 600; turn++) {
       // Each browser acts now and then; b sends actions claiming to be player 0, which the server must correct.
-      // Building needs the wisp (cursor mode); launching and selling need the spirit walking, within reach.
+      // Building far from the body needs the wisp (cursor mode); walking again in between exercises the mode switch.
       if (turn % 7 === 0) {
         a.send({ t: 'action', action: { type: 'spirit-mode', player: 0, mode: 'cursor' } });
         a.send({ t: 'action', action: { type: 'build', player: 0, tower: 'archer', x: 1 + (turn % 3), y: 2 + (turn % 5) } });

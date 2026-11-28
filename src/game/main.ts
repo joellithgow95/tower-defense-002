@@ -6,7 +6,7 @@
 import { createBot } from '../core/bot';
 import { type Mode, modes } from '../core/config';
 import { Match, fingerprint } from '../core/match';
-import { CELL, TICKS_PER_SECOND, alive, checkBuild, defaultSpirits, enemies, players, withSpirits, withinReach } from '../core/sim';
+import { CELL, TICKS_PER_SECOND, alive, checkBuild, defaultSpirits, enemies, inReach, players, withSpirits } from '../core/sim';
 import spiritContent from '../../content/spirits.json';
 import type { Action, Config, GameEvent, Player, Refusal, SpiritDef, SpiritMode, State } from '../core/types';
 import { problems } from '../core/validate';
@@ -87,6 +87,9 @@ let localSpirits: string[] = [];
 let spiritModes: SpiritMode[] = [];
 const keysDown = new Set<string>();
 let padHeld: Dir = { x: 0, y: 0 };
+/** Mouse walking: while a button is held in walk mode, the body walks toward the pointer. */
+let mouseWalk: { x: number; y: number } | null = null;
+let mouseHeld: Dir = { x: 0, y: 0 };
 let sentHeld: Dir = { x: 0, y: 0 };
 const STILL: Dir = { x: 0, y: 0 };
 const WALK_KEYS: Record<string, Dir> = {
@@ -113,9 +116,8 @@ const reasons = (): Record<Refusal, string> => ({
   'empty-garrison': 'Your castle has no troops yet. Build a Barracks or Knight Hall to train some.',
   'bad-target': 'You can only attack an enemy castle that is still standing.',
   'not-in-kit': 'Your spirit\'s followers can\'t build that.',
-  'needs-cursor': 'Fly as the wisp to build (Q).',
   'needs-walk': 'Walk to do that (Q).',
-  'out-of-reach': 'Walk closer: that is out of your spirit\'s reach.',
+  'out-of-reach': 'Walk closer, or fly as the wisp (Q): that is out of your spirit\'s reach.',
   'bad-move': 'That move is not allowed.',
 });
 
@@ -183,6 +185,8 @@ function show(next: Match, nextConfig: Config) {
   spiritModes = match.state.spirits.map((sp) => sp.mode);
   keysDown.clear();
   padHeld = { ...STILL };
+  mouseWalk = null;
+  mouseHeld = { ...STILL };
   sentHeld = { ...STILL };
   showKit();
   cursor = { x: home % width, y: Math.floor(home / width) };
@@ -209,7 +213,7 @@ function restart(next: Mode = mode) {
   if (local) { say(''); return; }
   try { localStorage.setItem('mode', mode); } catch { /* private window: just don't remember */ }
   const aim = foes(match.state).length > 1 ? ' Click an enemy castle (or press T) to pick who to attack.' : '';
-  say(`You are the ${spiritList[mySpirit].label}. Walk with WASD or the arrows. Press Q to fly as a wisp and build on your land (blue). Walk back to your castle and press Space to launch your troops.${aim}`, 10);
+  say(`You are the ${spiritList[mySpirit].label}. Walk with WASD, the arrows or by holding the mouse button. Build next to you, or press Q to fly as a wisp and build anywhere on your land (blue). Space launches your troops.${aim}`, 10);
 }
 
 /** A mode's config with this screen's spirit choices: yours offline, each seat's in local multiplayer. */
@@ -321,32 +325,18 @@ $('local').onclick = () => {
 function build() {
   if (hover && !paused) act({ type: 'build', player: me, tower: selected, ...hover });
 }
-/** Sell the nearest of your buildings within your spirit's reach. */
+/** Sell the building under the cursor, in either mode. */
 function sell() {
-  if (me < 0 || paused) return;
-  const action = sellNearby(me);
-  if (typeof action === 'string') say(action);
-  else act(action);
-}
-function sellNearby(p: Player): Action | string {
-  if (!walking(p)) return 'Walk to one of your buildings to sell it (Q to walk).';
-  const near = withinReach(match.state, config, p).find((r) => r.kind === 'building');
-  if (!near) return 'Walk up to one of your buildings to sell it.';
-  return { type: 'sell', player: p, x: near.cell % match.state.width, y: Math.floor(near.cell / match.state.width) };
+  if (!hover || paused) return;
+  act({ type: 'sell', player: me, ...hover });
 }
 function launch() {
   if (target >= 0 && !paused) act({ type: 'launch', player: me, target });
 }
-/**
- * Use the nearest thing your spirit can reach. Today that is only your castle, which launches;
- * sluices and calling stones will join `withinReach` in src/core/sim.ts and get their own action here.
- */
-function interact() {
-  if (me < 0 || paused) return;
-  if (!walking()) { say('Walk to use things (Q to walk).'); return; }
-  const near = withinReach(match.state, config, me).find((r) => r.kind === 'castle');
-  if (near) launch();
-  else say('Walk to your castle to launch your troops.');
+const cellIndex = (c: Cell) => c.y * match.state.width + c.x;
+/** Walking, you build within reach: on the pointed cell if it is in reach, else where you stand. */
+function walkBuildCell(p: Player, pointed: Cell | null): Cell {
+  return pointed && inReach(match.state, config, p, cellIndex(pointed)) ? pointed : bodyCell(p);
 }
 
 /** Walk or fly. The body stops when the wisp takes off; the wisp sets off from where the body stands. */
@@ -362,8 +352,9 @@ function toggleMode() {
   } else syncHeld();
 }
 
-/** The direction you are holding: the controller's, or else the keys'. */
+/** The direction you are holding: the controller's, else the mouse's, else the keys'. */
 function heldNow(): Dir {
+  if (!padHeld.x && !padHeld.y && (mouseHeld.x || mouseHeld.y)) return mouseHeld;
   let x = padHeld.x, y = padHeld.y;
   if (!x && !y) for (const key of keysDown) { x += WALK_KEYS[key].x; y += WALK_KEYS[key].y; }
   return { x: Math.sign(x), y: Math.sign(y) };
@@ -382,6 +373,8 @@ function syncHeld() {
 function stopWalking() {
   keysDown.clear();
   padHeld = { ...STILL };
+  mouseWalk = null;
+  mouseHeld = { ...STILL };
   if (me >= 0 && (sentHeld.x || sentHeld.y)) act({ type: 'spirit-move', player: me, x: 0, y: 0 });
   sentHeld = { ...STILL };
   if (!local) return;
@@ -399,7 +392,7 @@ function togglePause() {
 }
 $('pause').onclick = togglePause;
 $('restart').onclick = () => local ? startMatch() : restart();
-$('sell').onclick = sell;
+$('sell').onclick = () => say('Point at one of your buildings and press X.');
 $('launch').onclick = launch;
 $('online').onclick = () => { location.search = net ? '' : `?room=${newRoomCode()}`; };
 $('report').onclick = async () => {
@@ -413,21 +406,60 @@ function point(e: PointerEvent) {
   hover = view.cellAt(e.clientX, e.clientY);
 }
 
-/** Pointing at an enemy castle aims at it; anywhere else, it builds. */
-function buildOrAim() {
-  if (local || !hover || paused) return;
-  const castle = match.state.bases.indexOf(hover.y * match.state.width + hover.x);
+/**
+ * Pointing at an enemy castle aims at it. Otherwise flying builds there; walking builds there if it is
+ * within reach, and if not, returns false so the press walks you toward the pointer instead.
+ */
+function buildOrAim(): boolean {
+  if (local || !hover || paused) return true;
+  const castle = match.state.bases.indexOf(cellIndex(hover));
   if (castle >= 0 && foes(match.state).includes(castle)) target = castle;
-  else if (walking()) say('Press Q to fly as the wisp, then click to build.');
+  else if (walking() && !inReach(match.state, config, me, cellIndex(hover))) return false;
   else build();
+  return true;
 }
 
-canvas.addEventListener('pointermove', point);
+/** Each frame while the mouse walks: head for the pointer in one of 8 directions, and stop close to it. */
+function steerByMouse() {
+  if (!mouseWalk || me < 0) return;
+  const to = view.boardAt(mouseWalk.x, mouseWalk.y), sp = match.state.spirits[me];
+  let held = { ...STILL };
+  if (to && walking()) {
+    const dx = to.x - sp.x / CELL, dy = to.y - sp.y / CELL;
+    // An axis counts once it is at least ~0.4 of the other (22.5°), and a quarter-cell from the pointer is close enough.
+    if (Math.hypot(dx, dy) > 0.25) {
+      held = { x: Math.abs(dx) >= 0.414 * Math.abs(dy) ? Math.sign(dx) : 0, y: Math.abs(dy) >= 0.414 * Math.abs(dx) ? Math.sign(dy) : 0 };
+    }
+  }
+  if (held.x === mouseHeld.x && held.y === mouseHeld.y) return;
+  mouseHeld = held;
+  syncHeld();
+}
+function endMouseWalk() {
+  if (!mouseWalk) return;
+  mouseWalk = null;
+  mouseHeld = { ...STILL };
+  syncHeld();
+}
+
+canvas.addEventListener('pointermove', (e) => {
+  point(e);
+  if (mouseWalk) mouseWalk = { x: e.clientX, y: e.clientY };
+});
 canvas.addEventListener('pointerleave', () => { if (!controllerActive) hover = null; });
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('pointerdown', (e) => {
   point(e);
-  if (e.button === 0) buildOrAim();
+  // Left builds or aims; a left press out of reach, or holding the right button, walks.
+  const walks = e.button === 2 || (e.button === 0 && !buildOrAim());
+  if (walks && !local && walking() && !paused) {
+    mouseWalk = { x: e.clientX, y: e.clientY };
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* keep walking without capture */ }
+    steerByMouse();
+  }
 });
+canvas.addEventListener('pointerup', endMouseWalk);
+canvas.addEventListener('pointercancel', endMouseWalk);
 addEventListener('keydown', (e) => {
   if (settings.active || e.metaKey || e.ctrlKey || e.altKey || e.target instanceof HTMLSelectElement || e.target instanceof HTMLInputElement) return;
   const key = e.key.toLowerCase();
@@ -443,7 +475,7 @@ addEventListener('keydown', (e) => {
     return;
   }
   if (key === 'q' && !e.repeat) toggleMode();
-  if (key === 'e' && !e.repeat) interact();
+  if (key === 'e' && !e.repeat && walking() && !paused) act({ type: 'build', player: me, tower: selected, ...walkBuildCell(me, hover) });
   if (key === 'x') sell();
   if (key === ' ') { e.preventDefault(); launch(); }
   if (key === 't') cycleTarget();
@@ -521,8 +553,8 @@ function readController(now: number) {
     : paused
       ? `${label(bindings.pause)}  Resume · ${label(bindings.restart)}  Restart`
       : walking()
-        ? `Stick / D-pad  Walk · ${label(bindings.mode)}  Fly to build · ${label(bindings.build)}  Use (launch at your castle) · ${label(bindings.sell)}  Sell nearby · ${label(bindings.target)}  Aim${pauseHelp}`
-        : `Stick / D-pad  Fly · ${towerButtons}  Tower · ${label(bindings.build)}  Build or aim · ${label(bindings.mode)}  Walk${pauseHelp}`;
+        ? `Stick / D-pad  Walk · ${towerButtons}  Tower · ${label(bindings.build)}  Build here · ${label(bindings.mode)}  Fly · ${label(bindings.launch)}  Launch${pauseHelp}`
+        : `Stick / D-pad  Fly · ${towerButtons}  Tower · ${label(bindings.build)}  Build or aim · ${label(bindings.sell)}  Sell · ${label(bindings.launch)}  Launch · ${label(bindings.mode)}  Walk${pauseHelp}`;
   const helpWithSettings = `${help} · View / Create  Settings`;
   if (controllerHelp.textContent !== helpWithSettings) controllerHelp.textContent = helpWithSettings;
 
@@ -565,9 +597,11 @@ function readController(now: number) {
   }
   if (pressed(bindings.target)) cycleTarget();
   if (pressed(bindings.launch)) launch();
-  if (pressed(bindings.sell)) sell();
-  else if (pressed(bindings.build)) {
-    if (walking()) interact();
+  if (pressed(bindings.sell)) {
+    if (walking()) say('Fly as the wisp to point at a building and sell it.');
+    else sell();
+  } else if (pressed(bindings.build)) {
+    if (walking()) act({ type: 'build', player: me, tower: selected, ...bodyCell(me) });
     else buildOrAim();
   }
 }
@@ -660,14 +694,11 @@ function readLocalControllers(now: number) {
     const aim = seat.target;
     if (pressed(bindings.launch) && aim >= 0) queued.push({ type: 'launch', player, target: aim });
     if (pressed(bindings.sell)) {
-      const action = sellNearby(player);
-      if (typeof action === 'string') say(`${name(player)} · ${action}`);
-      else queued.push(action);
+      if (walking(player)) say(`${name(player)} · Fly as the wisp to point at a building and sell it.`);
+      else queued.push({ type: 'sell', player, ...seat.cursor });
     } else if (pressed(bindings.build)) {
-      // Walking, A uses what is in reach (your castle launches); flying, it builds.
-      if (!walking(player)) queued.push({ type: 'build', player, tower: seat.selected, ...seat.cursor });
-      else if (aim >= 0 && withinReach(match.state, config, player).some((r) => r.kind === 'castle')) queued.push({ type: 'launch', player, target: aim });
-      else say(`${name(player)} · Walk to your castle to launch your troops.`);
+      // Flying, A builds at the wisp; walking, where the body stands.
+      queued.push({ type: 'build', player, tower: seat.selected, ...(walking(player) ? bodyCell(player) : seat.cursor) });
     }
   }
 }
@@ -781,6 +812,7 @@ function loop(now: number) {
   if (!document.hidden && document.hasFocus()) {
     if (local) readLocalControllers(now);
     else readController(now);
+    if (!local) steerByMouse();
   }
   // The controller settings pause an offline game; online, the match carries on.
   const suspended = !net && (paused || settings.active || joining || controllers.disconnected());
@@ -853,8 +885,12 @@ function draw(now: number, seconds: number) {
     c.button.classList.toggle('poor', me < 0 || s.gold[me] < c.def.cost);
   }
   if (now > messageUntil) $('message').textContent = '';
-  // The build cursor is the wisp: only shown while flying.
-  const aimCell = me >= 0 && !walking() ? hover : null;
+  // Flying, the cursor is the wisp. Walking, it shows where you would build: the pointed cell if in reach,
+  // or with a controller, where you stand.
+  const aimCell = me < 0 || !alive(s, me) ? null
+    : !walking() ? hover
+      : controllerActive ? bodyCell(me)
+        : hover && inReach(s, config, me, cellIndex(hover)) ? hover : null;
   const own = aimCell && s.towers.find((t) => t.cell === aimCell.y * s.width + aimCell.x);
   const def = config.content.towers[own ? own.id : selected];
   const ok = me >= 0 && (!!own || !checkBuild(s, config, me, selected, aimCell?.x ?? -1, aimCell?.y ?? -1));
@@ -865,7 +901,7 @@ function draw(now: number, seconds: number) {
   }
   const locals: LocalSpirit[] = local
     ? seats.flatMap((seat, player) => (human(player) ? [{ player, wisp: walking(player) ? null : seat.cursor }] : []))
-    : me >= 0 ? [{ player: me, wisp: aimCell }] : [];
+    : me >= 0 ? [{ player: me, wisp: walking() ? null : aimCell }] : [];
   view.draw(s, config, seconds, local || me < 0 ? null : me, locals);
 }
 function drawLocalSeat(p: Player, el: HTMLElement, text: HTMLElement) {
@@ -883,7 +919,7 @@ function drawLocalSeat(p: Player, el: HTMLElement, text: HTMLElement) {
   const aim = occupied && seat.target >= 0 ? ` · Aim: ${name(seat.target)}` : '';
   text.textContent = alive(s, p) ? `♥ ${s.baseHealth[p]}${gold} · ⚔ ${armyText(s.garrison[p])}${selection}${aim}` : 'fallen';
   el.classList.toggle('fallen', !alive(s, p));
-  const cell = occupied && alive(s, p) && !walking(p) ? seat.cursor : null;
+  const cell = occupied && alive(s, p) ? (walking(p) ? bodyCell(p) : seat.cursor) : null;
   const own = cell && s.towers.find((t) => t.player === p && t.cell === cell.y * s.width + cell.x);
   const def = config.content.towers[own ? own.id : tower];
   const ok = !!cell && (!!own || !checkBuild(s, config, p, tower, cell.x, cell.y));

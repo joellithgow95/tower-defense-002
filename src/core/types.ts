@@ -58,6 +58,7 @@ export type SpiritMode = 'walk' | 'cursor';
 /**
  * A player's spirit. `x`, `y` is where its body stands, in distance units from the top-left cell centre.
  * In cursor mode the body rests there and the wisp flies; `wispCell` is the last cell the wisp built on.
+ * Switching back to walk puts you back in the body, wherever the wisp was.
  */
 export interface Spirit { id: string; mode: SpiritMode; x: number; y: number; dx: number; dy: number; wispCell: number }
 
@@ -70,7 +71,7 @@ export interface Departure { id: string; target: Player }
 export type Refusal =
   | 'game-over' | 'knocked-out' | 'unknown-tower' | 'outside' | 'not-your-land' | 'near-enemy-castle' | 'occupied' | 'no-gold'
   | 'blocks-route' | 'nothing-to-sell' | 'empty-garrison' | 'bad-target'
-  | 'not-in-kit' | 'needs-cursor' | 'needs-walk' | 'out-of-reach' | 'bad-move';
+  | 'not-in-kit' | 'needs-walk' | 'out-of-reach' | 'bad-move';
 
 export type GameEvent =
   | { type: 'shot'; from: number; target: number; x: number; y: number }
