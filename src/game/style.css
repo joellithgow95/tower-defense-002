@@ -53,3 +53,7 @@ kbd { opacity: .65; font-size: 12px; margin-left: 4px; }
 #seats li button { margin-left: auto; padding: 4px 10px; }
 #watching:empty { display: none; }
 #start { border-color: #ffd166; }
+
+body.local #controller-help { position: static; width: auto; transform: none; }
+body.local #players .side { flex-direction: column; gap: 2px; }
+button:disabled { opacity: .55; cursor: default; }

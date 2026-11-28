@@ -6,6 +6,7 @@ export const DEFAULT_BINDINGS = {
   pause: 9,
   restart: 3,
   launch: 7,
+  target: 6,
 };
 
 export type ControllerAction = keyof typeof DEFAULT_BINDINGS;
@@ -32,27 +33,39 @@ export const SPEEDS = [
 const STORAGE_KEY = 'td002.controller.v1';
 export const defaults = (): ControllerPreferences => ({ bindings: { ...DEFAULT_BINDINGS }, deadZone: 45, speed: 1 });
 
-export function loadPreferences(): ControllerPreferences {
+function profileKey(seat?: number) {
+  return seat === undefined ? STORAGE_KEY : `${STORAGE_KEY}.seat.${seat + 1}`;
+}
+
+export function loadPreferences(seat?: number): ControllerPreferences {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
-    // Settings saved before an action existed get its default button.
-    if (saved?.bindings) saved.bindings = { ...DEFAULT_BINDINGS, ...saved.bindings };
+    const saved = JSON.parse(localStorage.getItem(profileKey(seat)) ?? 'null');
     if (saved) {
-      const buttons = ACTIONS.map((action) => saved.bindings?.[action]);
+      const bindings = { ...saved.bindings };
+      // Older profiles have six bindings. Preserve their choices when assigning the two new actions.
+      for (const action of ['launch', 'target'] as const) {
+        if (bindings[action] !== undefined) continue;
+        const used = new Set(Object.values(bindings));
+        const preferred = DEFAULT_BINDINGS[action];
+        bindings[action] = used.has(preferred)
+          ? Object.keys(BUTTON_LABELS).map(Number).find((button) => !used.has(button))
+          : preferred;
+      }
+      const buttons = ACTIONS.map((action) => bindings[action]);
       if (buttons.every((button) => Number.isInteger(button) && BUTTON_LABELS[button])
         && new Set(buttons).size === ACTIONS.length
         && Number.isInteger(saved.deadZone) && saved.deadZone >= 20 && saved.deadZone <= 80 && saved.deadZone % 5 === 0
         && Number.isInteger(saved.speed) && SPEEDS[saved.speed]) {
-        return saved;
+        return { bindings, deadZone: saved.deadZone, speed: saved.speed };
       }
     }
   } catch { /* Storage may be disabled or contain invalid JSON. */ }
-  return defaults();
+  return seat === 0 ? loadPreferences() : defaults();
 }
 
-export function savePreferences(preferences: ControllerPreferences) {
+export function savePreferences(preferences: ControllerPreferences, seat?: number) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences));
+    localStorage.setItem(profileKey(seat), JSON.stringify(preferences));
     return true;
   } catch {
     return false;

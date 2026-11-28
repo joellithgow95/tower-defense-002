@@ -11,9 +11,10 @@ import type { Action, Config, GameEvent, Player, Refusal, State } from '../core/
 import { problems } from '../core/validate';
 import { Lockstep } from '../net/lockstep';
 import { MAX_NAME, type ServerMessage, TURN_TICKS } from '../net/protocol';
-import { BUTTON_LABELS, SETTINGS_BUTTON } from './controller-preferences';
+import { BUTTON_LABELS, SELECT_BUTTON, SETTINGS_BUTTON, defaults, loadPreferences, type ControllerPreferences } from './controller-preferences';
 import { createControllerSettings } from './controller-settings';
-import { createGamepadInput } from './gamepad';
+import { createSingleGamepadInput } from './gamepad';
+import { createLocalControllers } from './local-controllers';
 import { PLAYER_COLORS } from './models';
 import { ROOM_CODE, connect, newRoomCode } from './online';
 import { createView } from './view';
@@ -29,13 +30,32 @@ for (const [id, mode] of Object.entries(modes)) {
 }
 
 const view = createView(canvas);
-const gamepad = createGamepadInput();
+const gamepad = createSingleGamepadInput();
+const controllers = createLocalControllers();
+const settings = createControllerSettings($('controller-settings') as HTMLDialogElement, suspendControllers);
+const soloProfile = loadPreferences();
+const joinProfile = defaults();
+const localProfiles = new Map<Player, ControllerPreferences>();
 const controllerHelp = $('controller-help');
-const settings = createControllerSettings(
-  $('controller-settings') as HTMLDialogElement,
-  $('controller-open') as HTMLButtonElement,
-  gamepad.suspend,
-);
+let local = false, joining = false;
+
+function profileFor(seat?: Player) {
+  if (!local) return soloProfile;
+  if (seat === undefined) return joinProfile;
+  let profile = localProfiles.get(seat);
+  if (!profile) {
+    profile = loadPreferences(seat);
+    localProfiles.set(seat, profile);
+  }
+  return profile;
+}
+
+$('controller-open').onclick = () => settings.open(profileFor(me), local ? me : undefined);
+function suspendControllers() {
+  gamepad.suspend();
+  controllers.suspend();
+}
+
 const roomParam = new URLSearchParams(location.search).get('room');
 const roomCode = roomParam && ROOM_CODE.test(roomParam) ? roomParam : null;
 
@@ -52,6 +72,8 @@ let messageUntil = 0;
 let controllerActive = false;
 let cursor: Cell = { x: 0, y: 0 };
 let owed = 0;
+type Seat = { target: Player; selected: string; cursor: Cell };
+let seats: Seat[] = [];
 
 // Online only.
 let room: Extract<ServerMessage, { t: 'room' }> | null = null;
@@ -78,13 +100,16 @@ function say(text: string, seconds = 2.5) {
   messageUntil = performance.now() + seconds * 1000;
 }
 
+const human = (p: Player) => local ? controllers.seat(p) !== null : p === me;
+
 function name(p: Player) {
+  if (local) return human(p) ? `Player ${p + 1}` : `Bot ${p + 1}`;
   if (room) return `${room.seats[p]?.name ?? 'Bot'}${p === me ? ' (you)' : ''}`;
   return p === me ? 'You' : enemies(match.state, me, p) ? `Bot ${p + 1}` : `Ally ${p + 1}`;
 }
 const colorOf = (p: Player) => `#${PLAYER_COLORS[p].toString(16).padStart(6, '0')}`;
 /** Enemies you can still attack; none once your own castle has fallen, or while you watch. */
-const foes = (s: State) => (me >= 0 && alive(s, me) ? players(s).filter((p) => alive(s, p) && enemies(s, me, p)) : []);
+const foes = (s: State, player: Player = me) => (player >= 0 && alive(s, player) ? players(s).filter((p) => alive(s, p) && enemies(s, player, p)) : []);
 
 /** Aim at the next standing enemy after the current one. */
 function cycleTarget() {
@@ -105,7 +130,7 @@ function buildBadges() {
       const el = document.createElement('button');
       el.className = 'side';
       el.style.borderColor = colorOf(p);
-      el.onclick = () => { if (foes(match.state).includes(p)) target = p; };
+      el.onclick = () => { if (!local && foes(match.state).includes(p)) target = p; };
       const text = document.createElement('span');
       el.append(Object.assign(document.createElement('b'), { textContent: name(p) }), text);
       box.append(el);
@@ -122,6 +147,14 @@ function show(next: Match, nextConfig: Config) {
   cycleTarget();
   // The controller cursor starts on your castle.
   const { bases, width } = match.state, home = bases[Math.max(me, 0)];
+  if (local) {
+    const firstTower = Object.keys(config.content.towers)[0];
+    seats = bases.map((cell, player) => ({
+      target: foes(match.state, player)[0] ?? -1,
+      selected: firstTower,
+      cursor: { x: cell % width, y: Math.floor(cell / width) },
+    }));
+  }
   cursor = { x: home % width, y: Math.floor(home / width) };
   if (controllerActive) hover = cursor;
   view.reset(match.state);
@@ -137,11 +170,12 @@ function restart(next: Mode = mode) {
   mode = next;
   const seed = Date.now();
   show(new Match(modes[mode].config), modes[mode].config);
-  bots = players(match.state).filter((p) => p !== me).map((p) => createBot(p, seed + p));
+  bots = players(match.state).map((p) => createBot(p, seed + p));
   queued = [];
   owed = 0;
   paused = false;
   ($('mode') as HTMLSelectElement).value = mode;
+  if (local) { say(''); return; }
   try { localStorage.setItem('mode', mode); } catch { /* private window: just don't remember */ }
   const aim = foes(match.state).length > 1 ? ' Click an enemy castle (or press T) to pick who to attack.' : '';
   say(`Build on your land (blue): towers are walls, Barracks and Knight Halls train troops. Press Space to launch them.${aim}`, 8);
@@ -166,7 +200,46 @@ const cards = Object.entries(modes.duel.config.content.towers).map(([id, def], i
 
 const modeSelect = $('mode') as HTMLSelectElement;
 for (const [id, m] of Object.entries(modes)) modeSelect.append(new Option(m.label, id));
-modeSelect.onchange = () => { restart(modeSelect.value as Mode); modeSelect.blur(); };
+modeSelect.onchange = () => {
+  const next = modeSelect.value as Mode;
+  if (local) enterLobby(next);
+  else restart(next);
+  modeSelect.blur();
+};
+
+function enterLobby(next: Mode) {
+  joining = true;
+  controllers.reset(modes[next].config.teams.length);
+  controllerActive = false;
+  hover = null;
+  restart(next);
+  $('restart').textContent = 'Start match';
+  ($('restart') as HTMLButtonElement).disabled = true;
+}
+
+function startMatch() {
+  if (joining && !controllers.humans()) return;
+  joining = false;
+  $('restart').textContent = 'Restart';
+  ($('restart') as HTMLButtonElement).disabled = false;
+  controllers.suspend();
+  restart();
+}
+
+$('local').onclick = () => {
+  local = !local;
+  document.body.classList.toggle('local', local);
+  suspendControllers();
+  $('controller-open').textContent = local ? 'Player 1 controller settings' : 'Controller settings';
+  for (const id of ['cards', 'launch', 'sell']) $(id).hidden = local;
+  $('local').textContent = local ? 'Solo play' : 'Local multiplayer';
+  if (local) enterLobby('fourWay');
+  else {
+    joining = false;
+    controllers.reset(0);
+    startMatch();
+  }
+};
 
 function build() {
   if (hover && !paused) act({ type: 'build', player: me, tower: selected, ...hover });
@@ -179,12 +252,12 @@ function launch() {
 }
 /** Offline only: an online match can't pause for one player. */
 function togglePause() {
-  if (net || match.state.winner !== null) return;
+  if (net || joining || controllers.disconnected() || match.state.winner !== null) return;
   paused = !paused;
   say(paused ? 'Paused' : 'Go!', paused ? 1e6 : 1);
 }
 $('pause').onclick = togglePause;
-$('restart').onclick = () => restart();
+$('restart').onclick = () => local ? startMatch() : restart();
 $('sell').onclick = () => say('Point at one of your towers and press X.');
 $('launch').onclick = launch;
 $('online').onclick = () => { location.search = net ? '' : `?room=${newRoomCode()}`; };
@@ -201,7 +274,7 @@ function point(e: PointerEvent) {
 
 /** Pointing at an enemy castle aims at it; anywhere else, it builds. */
 function buildOrAim() {
-  if (!hover || paused) return;
+  if (local || !hover || paused) return;
   const castle = match.state.bases.indexOf(hover.y * match.state.width + hover.x);
   if (castle >= 0 && foes(match.state).includes(castle)) target = castle;
   else build();
@@ -216,6 +289,11 @@ canvas.addEventListener('pointerdown', (e) => {
 addEventListener('keydown', (e) => {
   if (settings.active || e.metaKey || e.ctrlKey || e.altKey || e.target instanceof HTMLSelectElement || e.target instanceof HTMLInputElement) return;
   const key = e.key.toLowerCase();
+  if (local) {
+    if (key === 'p' && !e.repeat) togglePause();
+    if (key === 'r' && !e.repeat) startMatch();
+    return;
+  }
   if (key === 'x') sell();
   if (key === ' ') { e.preventDefault(); launch(); }
   if (key === 't') cycleTarget();
@@ -235,7 +313,7 @@ function winText(winner: number | 'draw') {
   const again = room ? (room.host ? ' Press R for the lobby.' : '') : ' Press R to play again.';
   if (winner === 'draw') return `A draw.${again}`;
   const winners = players(match.state).filter((p) => config.teams[p] === winner);
-  if (me >= 0 && winner === config.teams[me]) return `${winners.length > 1 ? 'Your team wins!' : 'You win!'}${again}`;
+  if (!local && me >= 0 && winner === config.teams[me]) return `${winners.length > 1 ? 'Your team wins!' : 'You win!'}${again}`;
   return `${winners.map(name).join(' and ')} win${winners.length > 1 ? '' : 's'}.${again}`;
 }
 
@@ -243,8 +321,8 @@ function winText(winner: number | 'draw') {
 function react(events: GameEvent[], wasAlive: boolean) {
   view.show(events);
   const why = reasons();
-  for (const e of events) if (e.type === 'refused' && e.action.player === me) say(why[e.reason]);
-  if (wasAlive && !alive(match.state, me)) say('Your castle has fallen! Your buildings are ruins now. Watch how it ends.', 6);
+  for (const e of events) if (e.type === 'refused' && human(e.action.player)) say(local ? `${name(e.action.player)} · ${why[e.reason]}` : why[e.reason]);
+  if (!local && wasAlive && !alive(match.state, me)) say('Your castle has fallen! Your buildings are ruins now. Watch how it ends.', 6);
   if (match.state.winner !== null) say(winText(match.state.winner), 1e6);
 }
 
@@ -256,11 +334,11 @@ function availableGamepads() {
 }
 
 function readController(now: number) {
-  const input = gamepad.poll(availableGamepads(), now, settings.preferences);
+  const input = gamepad.poll(availableGamepads(), now, soloProfile);
   if (!input && controllerActive) {
     controllerActive = false;
     hover = null;
-    settings.cancelCapture();
+    settings.close();
     if (!net && !paused && match.state.winner === null) {
       togglePause();
       say('Controller disconnected. Reconnect to resume, or press P.', 1e6);
@@ -276,7 +354,7 @@ function readController(now: number) {
     settings.handle(input.pressed, input.move);
     return;
   }
-  const { bindings } = settings.preferences;
+  const { bindings } = soloProfile;
   const pressed = (button: number) => input.pressed.includes(button);
   const ended = match.state.winner !== null;
   const label = (button: number) => BUTTON_LABELS[button];
@@ -291,7 +369,7 @@ function readController(now: number) {
   if (controllerHelp.textContent !== helpWithSettings) controllerHelp.textContent = helpWithSettings;
 
   if (pressed(SETTINGS_BUTTON)) {
-    settings.open();
+    settings.open(soloProfile);
     return;
   }
   const tower = Number(pressed(bindings.next)) - Number(pressed(bindings.previous));
@@ -321,13 +399,87 @@ function readController(now: number) {
     const index = cards.findIndex((card) => card.id === selected);
     selected = cards[(index + tower + cards.length) % cards.length].id;
   }
+  if (pressed(bindings.target)) cycleTarget();
   if (pressed(bindings.launch)) launch();
   if (pressed(bindings.sell)) sell();
   else if (pressed(bindings.build)) buildOrAim();
 }
 
-addEventListener('blur', gamepad.suspend);
-document.addEventListener('visibilitychange', gamepad.suspend);
+function readLocalControllers(now: number) {
+  const inputs = controllers.poll(now, profileFor);
+  const disconnect = controllers.disconnected();
+  const owner = settings.owner ?? me;
+  if (settings.active && controllers.seat(owner) === -1) settings.close();
+  const hostBindings = profileFor(me).bindings;
+  const label = (key: keyof typeof hostBindings) => BUTTON_LABELS[hostBindings[key]];
+  controllerHelp.hidden = false;
+  const help = disconnect
+    ? 'Controller disconnected · Press A / Cross on a controller to reclaim the seat'
+    : joining
+      ? `${controllers.humans()}/${seats.length} joined · A / Cross  Join · ${label('pause')}  Start · Empty seats are bots`
+      : paused || match.state.winner !== null
+        ? `${label('pause')}  Resume · ${label('restart')}  Restart · View / Create  Settings`
+        : 'Stick / D-pad  Move · View / Create  Open your controls';
+  if (controllerHelp.textContent !== help) controllerHelp.textContent = help;
+  const modal = settings.active;
+  for (const { pad, device, input } of inputs) {
+    if (!input.ready) continue;
+    const pressed = (button: number) => input.pressed.includes(button);
+    if (modal) {
+      if (device.seat === owner) settings.handle(input.pressed, input.move);
+      continue;
+    }
+    if (settings.active) break;
+    if (device.seat === undefined) {
+      if (pressed(SELECT_BUTTON)) {
+        controllers.claim(pad.index, joining);
+        if (joining && controllers.humans()) ($('restart') as HTMLButtonElement).disabled = false;
+      }
+      continue;
+    }
+    const player = device.seat;
+    const seat = seats[player];
+    const profile = profileFor(player);
+    const { bindings } = profile;
+    if (pressed(SETTINGS_BUTTON)) {
+      settings.open(profile, player);
+      break;
+    }
+    if (player === me) {
+      if (pressed(bindings.pause)) {
+        if (joining) startMatch();
+        else if (!disconnect) togglePause();
+        break;
+      }
+      if (pressed(bindings.restart) && (paused || match.state.winner !== null)) { startMatch(); break; }
+    }
+    if (joining || disconnect || paused || match.state.winner !== null || !alive(match.state, player)) continue;
+    const { width, height } = match.state;
+    const { move } = input;
+    if (move) {
+      seat.cursor = {
+        x: Math.max(0, Math.min(width - 1, seat.cursor.x + move.x)),
+        y: Math.max(0, Math.min(height - 1, seat.cursor.y + move.y)),
+      };
+    }
+    const turn = Number(pressed(bindings.next)) - Number(pressed(bindings.previous));
+    if (turn) {
+      const index = cards.findIndex((card) => card.id === seat.selected);
+      seat.selected = cards[(index + turn + cards.length) % cards.length].id;
+    }
+    if (pressed(bindings.target)) {
+      const options = foes(match.state, player);
+      if (options.length) seat.target = options[(options.indexOf(seat.target) + 1) % options.length];
+    }
+    const aim = seat.target;
+    if (pressed(bindings.launch) && aim >= 0) queued.push({ type: 'launch', player, target: aim });
+    if (pressed(bindings.sell)) queued.push({ type: 'sell', player, ...seat.cursor });
+    else if (pressed(bindings.build)) queued.push({ type: 'build', player, tower: seat.selected, ...seat.cursor });
+  }
+}
+
+addEventListener('blur', suspendControllers);
+document.addEventListener('visibilitychange', suspendControllers);
 
 // ---------- Online: the lobby and the connection ----------
 
@@ -390,14 +542,16 @@ if (roomCode) {
     net!.send({ t: 'name', name: nameInput.value });
   };
   const roomMode = $('room-mode') as HTMLSelectElement;
-  for (const [id, m] of Object.entries(modes)) roomMode.append(new Option(m.label, id));
+  for (const [id, m] of Object.entries(modes)) {
+    if (id !== 'fourWay' && id !== 'twoVsTwo') roomMode.append(new Option(m.label, id));
+  }
   roomMode.onchange = () => net!.send({ t: 'mode', mode: roomMode.value as Mode });
   $('start').onclick = () => net!.send({ t: 'start' });
   $('copy-link').onclick = async () => {
     try { await navigator.clipboard.writeText(location.href); say('Link copied. Send it to your friends.'); }
     catch { prompt('Send your friends this link:', location.href); }
   };
-  for (const id of ['mode', 'pause']) $(id).hidden = true;
+  for (const id of ['mode', 'pause', 'local']) $(id).hidden = true;
   $('online').textContent = 'Leave room';
   net = connect(roomCode, nameInput.value, onServer, (connected, why) => {
     if (!connected) say(why ? `${why}.` : 'Connection lost. Reconnecting…', why ? 1e6 : 30);
@@ -417,9 +571,12 @@ let last = performance.now();
 function loop(now: number) {
   const seconds = Math.min((now - last) / 1000, 0.25);
   last = now;
-  if (!document.hidden && document.hasFocus()) readController(now);
+  if (!document.hidden && document.hasFocus()) {
+    if (local) readLocalControllers(now);
+    else readController(now);
+  }
   // The controller settings pause an offline game; online, the match carries on.
-  const suspended = !net && (paused || settings.active);
+  const suspended = !net && (paused || settings.active || joining || controllers.disconnected());
   if (lock) runOnline(seconds);
   else if (!net && !suspended) runOffline(seconds);
   draw(now, suspended ? 0 : seconds);
@@ -433,7 +590,7 @@ function runOffline(seconds: number) {
     owed -= TICK;
     if (match.state.winner !== null) continue;
     const wasAlive = alive(match.state, me);
-    react(match.step([...queued.splice(0), ...bots.flatMap((bot) => bot(match.state, config))]), wasAlive);
+    react(match.step([...queued.splice(0), ...bots.flatMap((bot, p) => human(p) ? [] : bot(match.state, config))]), wasAlive);
   }
 }
 
@@ -461,6 +618,10 @@ function draw(now: number, seconds: number) {
   const s = match.state;
   if (!foes(s).includes(target)) { target = -1; cycleTarget(); }
   for (const { p, el, text } of badges) {
+    if (local) {
+      drawLocalSeat(p, el, text);
+      continue;
+    }
     const gold = p === me ? ` · ● ${s.gold[p]} gold` : '';
     text.textContent = alive(s, p) ? `♥ ${s.baseHealth[p]}${gold} · ⚔ ${armyText(s.garrison[p])}` : 'fallen';
     el.classList.toggle('target', p === target);
@@ -474,7 +635,32 @@ function draw(now: number, seconds: number) {
   const own = hover && s.towers.find((t) => t.cell === hover!.y * s.width + hover!.x);
   const def = config.content.towers[own ? own.id : selected];
   const ok = me >= 0 && (!!own || !checkBuild(s, config, me, selected, hover?.x ?? -1, hover?.y ?? -1));
-  view.highlight(hover, ok, def.kind === 'shooter' ? def.range / 1000 : 0);
-  view.draw(s, config, seconds, me, target);
+  for (let p = 0; p < PLAYER_COLORS.length; p++) {
+    if (local && p < seats.length) continue;
+    const active = !local && p === me;
+    view.highlight(p, active ? hover : null, ok, def.kind === 'shooter' ? def.range / 1000 : 0, active && target >= 0 ? s.bases[target] : -1);
+  }
+  view.draw(s, config, seconds, local || me < 0 ? null : me);
 }
+function drawLocalSeat(p: Player, el: HTMLElement, text: HTMLElement) {
+  const s = match.state;
+  const seat = seats[p];
+  const options = foes(s, p);
+  if (!options.includes(seat.target)) seat.target = options[0] ?? -1;
+  const occupied = human(p);
+  const tower = seat.selected;
+  el.querySelector('b')!.textContent = `${name(p)}${controllers.seat(p) === -1 ? ' · Disconnected' : ''}`;
+  const gold = occupied ? ` · ● ${s.gold[p]} gold` : '';
+  const towerDef = config.content.towers[tower];
+  const selection = occupied ? ` · ${towerDef.label} (${towerDef.cost} gold)` : '';
+  const aim = occupied && seat.target >= 0 ? ` · Aim: ${name(seat.target)}` : '';
+  text.textContent = alive(s, p) ? `♥ ${s.baseHealth[p]}${gold} · ⚔ ${armyText(s.garrison[p])}${selection}${aim}` : 'fallen';
+  el.classList.toggle('fallen', !alive(s, p));
+  const cell = occupied && alive(s, p) ? seat.cursor : null;
+  const own = cell && s.towers.find((t) => t.player === p && t.cell === cell.y * s.width + cell.x);
+  const def = config.content.towers[own ? own.id : tower];
+  const ok = !!cell && (!!own || !checkBuild(s, config, p, tower, cell.x, cell.y));
+  view.highlight(p, cell, ok, def.kind === 'shooter' ? def.range / 1000 : 0, occupied && seat.target >= 0 ? s.bases[seat.target] : -1);
+}
+
 requestAnimationFrame(loop);

@@ -1,14 +1,17 @@
 import {
   ACTIONS, BACK_BUTTON, BUTTON_LABELS, SELECT_BUTTON, SETTINGS_BUTTON, SPEEDS,
-  defaults, loadPreferences, rebind, savePreferences, type ControllerAction,
+  defaults, rebind, savePreferences, type ControllerAction, type ControllerPreferences,
 } from './controller-preferences';
 
 const LABELS: Record<ControllerAction, string> = {
-  build: 'Build', sell: 'Sell', previous: 'Previous tower', next: 'Next tower', pause: 'Pause / resume', restart: 'Restart', launch: 'Launch troops',
+  build: 'Build', sell: 'Sell', previous: 'Previous tower', next: 'Next tower', pause: 'Pause / resume', restart: 'Restart',
+  launch: 'Launch troops', target: 'Cycle target',
 };
 
-export function createControllerSettings(dialog: HTMLDialogElement, opener: HTMLButtonElement, suspend: () => void) {
-  const preferences = loadPreferences();
+export function createControllerSettings(dialog: HTMLDialogElement, suspend: () => void) {
+  let preferences: ControllerPreferences;
+  let owner: number | undefined;
+  const title = dialog.querySelector('h2')!;
   const status = dialog.querySelector<HTMLElement>('p[role=status]')!;
   const storageStatus = dialog.querySelector<HTMLElement>('#controller-storage')!;
   const bindings = dialog.querySelector<HTMLElement>('#controller-bindings')!;
@@ -31,6 +34,7 @@ export function createControllerSettings(dialog: HTMLDialogElement, opener: HTML
 
   function render() {
     for (const { action, button } of rows) {
+      button.hidden = owner !== undefined && owner !== 0 && (action === 'pause' || action === 'restart');
       button.textContent = `${LABELS[action]} · ${BUTTON_LABELS[preferences.bindings[action]]}`;
     }
     deadZone.value = String(preferences.deadZone);
@@ -39,7 +43,7 @@ export function createControllerSettings(dialog: HTMLDialogElement, opener: HTML
   }
 
   function save() {
-    storageStatus.textContent = savePreferences(preferences) ? '' : 'Changes apply until this page closes.';
+    storageStatus.textContent = savePreferences(preferences, owner) ? '' : 'Changes apply until this page closes.';
     render();
   }
 
@@ -49,14 +53,18 @@ export function createControllerSettings(dialog: HTMLDialogElement, opener: HTML
     suspend();
   }
 
-  function open() {
+  function open(profile: ControllerPreferences, seat?: number) {
     if (dialog.open) return;
+    preferences = profile;
+    owner = seat;
+    title.textContent = seat === undefined ? 'Controller settings' : `Player ${seat + 1} controller settings`;
+    storageStatus.textContent = '';
+    render();
     dialog.showModal();
     rows[0].button.focus();
     suspend();
   }
 
-  opener.onclick = open;
   deadZone.oninput = () => { preferences.deadZone = Number(deadZone.value); save(); };
   speed.onchange = () => { preferences.speed = Number(speed.value); save(); };
   dialog.querySelector<HTMLButtonElement>('#controller-reset')!.onclick = () => {
@@ -72,7 +80,6 @@ export function createControllerSettings(dialog: HTMLDialogElement, opener: HTML
     event.preventDefault();
     cancelCapture();
   });
-  render();
 
   function handle(pressed: number[], move?: { x: number; y: number }) {
     if (pressed.includes(BACK_BUTTON) || pressed.includes(SETTINGS_BUTTON)) {
@@ -89,7 +96,7 @@ export function createControllerSettings(dialog: HTMLDialogElement, opener: HTML
       }
       return;
     }
-    const controls = Array.from(dialog.querySelectorAll<HTMLElement>('button, input, select'));
+    const controls = Array.from(dialog.querySelectorAll<HTMLElement>('button:not([hidden]), input, select'));
     const focused = document.activeElement;
     if (move?.y) {
       const index = controls.findIndex((control) => control === focused);
@@ -108,5 +115,9 @@ export function createControllerSettings(dialog: HTMLDialogElement, opener: HTML
     if (pressed.includes(SELECT_BUTTON) && focused instanceof HTMLButtonElement) focused.click();
   }
 
-  return { preferences, open, handle, get active() { return dialog.open; }, cancelCapture };
+  return {
+    open, handle, close: () => dialog.close(),
+    get active() { return dialog.open; },
+    get owner() { return owner; },
+  };
 }

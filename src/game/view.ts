@@ -25,16 +25,20 @@ export function createView(canvas: HTMLCanvasElement) {
   let effects: { mesh: THREE.Mesh; age: number; life: number; update: (p: number) => void }[] = [];
   let size = { width: 1, height: 1 };
 
-  const cursor = new THREE.Mesh(new THREE.PlaneGeometry(0.96, 0.96), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55 }));
-  cursor.rotation.x = -Math.PI / 2;
-  cursor.position.y = 0.02;
-  const range = new THREE.Mesh(new THREE.RingGeometry(0.97, 1, 64), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }));
-  range.rotation.x = -Math.PI / 2;
-  range.position.y = 0.03;
-  // A slowly turning ring round the castle you will launch at.
-  const targetRing = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.74, 6), new THREE.MeshBasicMaterial({ color: 0xff5252, transparent: true, opacity: 0.85 }));
-  targetRing.rotation.x = -Math.PI / 2;
-  scene.add(cursor, range, targetRing);
+  const cursorGeometry = new THREE.PlaneGeometry(0.96, 0.96);
+  const rangeGeometry = new THREE.RingGeometry(0.97, 1, 64);
+  const targetGeometry = new THREE.RingGeometry(0.62, 0.74, 6);
+  const markers = PLAYER_COLORS.map((color) => {
+    const cursor = new THREE.Mesh(cursorGeometry, new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.65, depthWrite: false }));
+    const range = new THREE.Mesh(rangeGeometry, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.65, depthWrite: false }));
+    const target = new THREE.Mesh(targetGeometry, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false }));
+    for (const marker of [cursor, range, target]) {
+      marker.rotation.x = -Math.PI / 2;
+      marker.visible = false;
+      scene.add(marker);
+    }
+    return { cursor, range, target };
+  });
 
   // Land: a faint player-coloured tint on every cell a player may build on, redrawn when buildings change.
   // The dark ring marks where you may not build, around enemy castles.
@@ -126,26 +130,19 @@ export function createView(canvas: HTMLCanvasElement) {
   }
 
   /** Fallen players have no land. `me` sees the no-build rings round their own enemies' castles. */
-  function drawLand(state: State, cfg: Config, me: Player) {
-    const key = `${me}|${state.baseHealth.map((h) => h > 0).join()}|${state.towers.filter((t) => t.demolish === 0).map((t) => t.uid).join()}`;
+  function drawLand(state: State, cfg: Config, me: Player | null) {
+    const key = me + '|' + state.towers.filter((t) => t.demolish === 0).map((t) => t.uid).join() + '|' + state.baseHealth.map((h) => h > 0).join();
     if (key === landKey) return;
     landKey = key;
     state.rock.forEach((rock, cell) => {
       const open = !rock && !state.bases.includes(cell);
       for (const p of players(state)) land[p][cell].visible = open && alive(state, p) && inTerritory(state, cfg.rules, p, cell);
-      noBuild[cell].visible = open && me >= 0 && cfg.rules.castleNoBuildRadius > 0 && nearEnemyCastle(state, cfg.rules, me, cell);
+      noBuild[cell].visible = open && me !== null && cfg.rules.castleNoBuildRadius > 0 && nearEnemyCastle(state, cfg.rules, me, cell);
     });
   }
 
-  /** Draw the match as `me` sees it, with a ring on the castle they are aiming at (-1 for none). */
-  function draw(state: State, cfg: Config, seconds: number, me: Player, target: Player) {
+  function draw(state: State, cfg: Config, seconds: number, me: Player | null) {
     drawLand(state, cfg, me);
-    targetRing.visible = target >= 0;
-    if (target >= 0) {
-      place(targetRing, state.bases[target]);
-      targetRing.position.y = 0.05;
-      targetRing.rotation.z = performance.now() / 900;
-    }
     const liveTowers = new Set(state.towers.map((t) => t.uid));
     for (const [uid, v] of towers) if (!liveTowers.has(uid)) { board.remove(v.model); towers.delete(uid); }
     for (const t of state.towers) {
@@ -194,13 +191,22 @@ export function createView(canvas: HTMLCanvasElement) {
     return x >= 0 && y >= 0 && x < size.width && y < size.height ? { x, y } : null;
   }
 
-  function highlight(cell: { x: number; y: number } | null, ok: boolean, radius: number) {
+  function highlight(player: Player, cell: { x: number; y: number } | null, ok: boolean, radius: number, aimedAt: number) {
+    const { cursor, range, target } = markers[player];
     cursor.visible = !!cell;
     range.visible = !!cell && radius > 0;
+    target.visible = aimedAt >= 0;
+    if (target.visible) {
+      place(target, aimedAt);
+      target.position.y = 0.06 + player * 0.003;
+      target.scale.setScalar(1 + player * 0.15);
+    }
     if (!cell) return;
-    cursor.position.set(worldX(cell.x), 0.02, worldZ(cell.y));
-    (cursor.material as THREE.MeshBasicMaterial).color.set(ok ? 0xbfffa8 : 0xff5252);
-    range.position.set(worldX(cell.x), 0.03, worldZ(cell.y));
+    cursor.position.set(worldX(cell.x), 0.02 + player * 0.003, worldZ(cell.y));
+    cursor.material.color.set(PLAYER_COLORS[player]);
+    cursor.material.opacity = ok ? 0.8 : 0.35;
+    cursor.scale.setScalar(1 - player * 0.14);
+    range.position.set(worldX(cell.x), 0.04 + player * 0.003, worldZ(cell.y));
     range.scale.setScalar(radius || 1);
   }
 

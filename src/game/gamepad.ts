@@ -15,25 +15,12 @@ function direction(pad: Gamepad, deadZone: number) {
 }
 
 export function createGamepadInput() {
-  let active: Pick<Gamepad, 'index' | 'id'> | undefined;
   let previous: boolean[] = [];
   let previousDirection = { x: 0, y: 0 };
   let repeatAt = 0;
   let requireNeutral = true;
 
-  function poll(pads: ArrayLike<Gamepad | null>, now: number, preferences: ControllerPreferences) {
-    const current = active && pads[active.index];
-    const pad = current?.connected && current.id === active?.id && current.mapping === 'standard'
-      ? current
-      : Array.from(pads).find((candidate) => candidate?.connected && candidate.mapping === 'standard');
-    if (!pad) {
-      active = undefined;
-      requireNeutral = true;
-      return null;
-    }
-    if (active?.index !== pad.index || active.id !== pad.id) requireNeutral = true;
-    active = { index: pad.index, id: pad.id };
-
+  function poll(pad: Gamepad, now: number, preferences: ControllerPreferences) {
     const buttons = pad.buttons.map((button) => button.pressed);
     const move = direction(pad, preferences.deadZone / 100);
     if (requireNeutral) {
@@ -59,4 +46,21 @@ export function createGamepadInput() {
   }
 
   return { poll, suspend: () => { requireNeutral = true; } };
+}
+
+
+/** Keep the same controller selected while playing solo or in an online room. */
+export function createSingleGamepadInput() {
+  const input = createGamepadInput();
+  let active: Pick<Gamepad, 'index' | 'id'> | undefined;
+  function poll(pads: ArrayLike<Gamepad | null>, now: number, preferences: ControllerPreferences) {
+    const current = active && pads[active.index];
+    const pad = current?.connected && current.id === active?.id && current.mapping === 'standard'
+      ? current
+      : Array.from(pads).find((candidate) => candidate?.connected && candidate.mapping === 'standard');
+    if (!pad || active?.index !== pad.index || active.id !== pad.id) input.suspend();
+    active = pad ? { index: pad.index, id: pad.id } : undefined;
+    return pad ? input.poll(pad, now, preferences) : null;
+  }
+  return { poll, suspend: input.suspend };
 }
