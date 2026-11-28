@@ -43,3 +43,13 @@ kbd { opacity: .65; font-size: 12px; margin-left: 4px; }
 #controller-settings input, #controller-settings select { margin: 5px 0 12px; accent-color: #ffd166; }
 #controller-settings select { font: inherit; color: inherit; background: #323e58; padding: 6px; border: 1px solid #465576; border-radius: 6px; }
 #controller-settings :focus-visible, #controller-settings :focus { outline: 2px solid #ffd166; outline-offset: 2px; }
+#lobby { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(460px, calc(100vw - 32px)); padding: 20px 22px; background: #1f2838f2; border: 2px solid #465576; border-radius: 14px; display: grid; gap: 12px; }
+#lobby[hidden] { display: none; }
+#lobby h2 { font-size: 20px; } #lobby code { color: #ffd166; }
+#lobby label { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+#lobby input { font: inherit; color: inherit; background: #323e58; border: 2px solid #465576; border-radius: 10px; padding: 6px 10px; width: 60%; }
+#seats { list-style: none; padding: 0; display: grid; gap: 6px; }
+#seats li { display: flex; gap: 6px; align-items: center; padding: 6px 10px; background: #283247; border-left: 5px solid; border-radius: 8px; }
+#seats li button { margin-left: auto; padding: 4px 10px; }
+#watching:empty { display: none; }
+#start { border-color: #ffd166; }
