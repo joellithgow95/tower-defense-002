@@ -39,3 +39,7 @@ Start with [your first change](docs/first-change.md). You don't need to know how
 - [`AGENTS.md`](AGENTS.md): rules for coding agents (and people)
 
 - [`docs/README.md`](docs/README.md): creative vision, worldbuilding and decision index
+
+## License
+
+The code is [MIT](LICENSE): reuse it freely with credit. The game's world, story and creative writing in [`docs/`](docs/README.md) are not open-licensed; all rights reserved.
