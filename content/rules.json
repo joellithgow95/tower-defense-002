@@ -1,1 +1,1 @@
-{ "startingGold": 60, "goldPerIncome": 2, "incomeTicks": 60, "baseHealth": 20, "refundPercent": 60, "demolishTicks": 180 }
+{ "startingGold": 60, "goldPerIncome": 2, "incomeTicks": 60, "baseHealth": 20, "refundPercent": 60, "demolishTicks": 180, "buildRadius": 3, "castleNoBuildRadius": 3, "launchGapTicks": 15 }

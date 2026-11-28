@@ -1,0 +1,14 @@
+// Cloudflare deploy config for the online game. The hostname (play.joellithgow.com) is attached in
+// joellithgow95/jlithgow-ops, not here, so this file has no routes.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tower-defense-002",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-11-01",
+  // The built game. Only /room/* runs the worker; every other path is a file from dist/.
+  "assets": { "directory": "dist", "run_worker_first": ["/room/*"] },
+  "durable_objects": { "bindings": [{ "name": "ROOMS", "class_name": "Room" }] },
+  // SQLite-backed Durable Objects are the kind the free plan allows.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  "observability": { "enabled": true }
+}

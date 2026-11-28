@@ -1,8 +1,9 @@
 /** Replays, state fingerprints and the reset/step/observe interface for bots and training. */
-import { createMatch, other, step } from './sim';
-import type { Action, Config, GameEvent, State, Team } from './types';
+import { createMatch, step } from './sim';
+import type { Action, Config, GameEvent, Player, State } from './types';
 
-export interface Replay { version: 1; game: string; config: Config; actions: { tick: number; action: Action }[]; ticks: number }
+/** Version 2 added game modes with any number of players. */
+export interface Replay { version: 2; game: string; config: Config; actions: { tick: number; action: Action }[]; ticks: number }
 
 export class Match {
   state: State;
@@ -15,7 +16,7 @@ export class Match {
   }
 
   replay(game = 'dev'): Replay {
-    return structuredClone({ version: 1 as const, game, config: this.config, actions: this.log, ticks: this.state.tick });
+    return structuredClone({ version: 2 as const, game, config: this.config, actions: this.log, ticks: this.state.tick });
   }
 }
 
@@ -40,12 +41,11 @@ export function fingerprint(s: State): string {
 }
 
 /** What one player may see, from their own side. A copy, so a bot cannot change the match. */
-export function observe(s: State, team: Team) {
+export function observe(s: State, player: Player) {
   return structuredClone({
-    tick: s.tick, width: s.width, height: s.height, team,
-    gold: s.gold[team],
-    baseHealth: { own: s.baseHealth[team], enemy: s.baseHealth[other(team)] },
-    bases: { own: s.bases[team], enemy: s.bases[other(team)] },
+    tick: s.tick, width: s.width, height: s.height, player, teams: s.teams,
+    gold: s.gold[player], garrison: s.garrison[player],
+    baseHealth: s.baseHealth, bases: s.bases,
     rock: s.rock, towers: s.towers, troops: s.troops, winner: s.winner,
   });
 }

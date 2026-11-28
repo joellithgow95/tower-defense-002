@@ -6,22 +6,26 @@
     "dev": "vite",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
     "test": "vitest run",
     "check": "npm run test && npm run build",
     "sim": "vite-node scripts/sim.ts",
-    "replay": "vite-node scripts/replay.ts"
+    "replay": "vite-node scripts/replay.ts",
+    "online": "vite build && wrangler dev",
+    "deploy": "vite build && wrangler deploy"
   },
   "dependencies": {
     "three": "^0.187.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "5.20261113.1",
     "@types/node": "^26.6.11",
     "@types/three": "^0.187.0",
     "typescript": "^7.0.2",
     "vite": "^8.4.0",
     "vite-node": "^6.0.0",
-    "vitest": "^5.1.2"
+    "vitest": "^5.1.2",
+    "wrangler": "4.162.0"
   },
   "license": "MIT",
   "private": true,

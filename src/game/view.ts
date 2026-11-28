@@ -1,8 +1,8 @@
 /** Draws a match. It only reads the state; it never changes the game. */
 import * as THREE from 'three';
-import { CELL, ownerOf, troopPosition } from '../core/sim';
-import type { Config, GameEvent, State } from '../core/types';
-import { TEAM_COLORS, castleModel, rockModel, towerModel, troopModel } from './models';
+import { CELL, alive, inTerritory, nearEnemyCastle, players, troopPosition } from '../core/sim';
+import type { Config, GameEvent, Player, State } from '../core/types';
+import { PLAYER_COLORS, castleModel, rockModel, towerModel, troopModel } from './models';
 
 export function createView(canvas: HTMLCanvasElement) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: false });
@@ -20,7 +20,7 @@ export function createView(canvas: HTMLCanvasElement) {
 
   let board = new THREE.Group();
   scene.add(board);
-  const towers = new Map<number, THREE.Group>();
+  const towers = new Map<number, { model: THREE.Group; ruined: boolean }>();
   const troops = new Map<number, { model: THREE.Group; bar: THREE.Mesh }>();
   let effects: { mesh: THREE.Mesh; age: number; life: number; update: (p: number) => void }[] = [];
   let size = { width: 1, height: 1 };
@@ -31,7 +31,18 @@ export function createView(canvas: HTMLCanvasElement) {
   const range = new THREE.Mesh(new THREE.RingGeometry(0.97, 1, 64), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }));
   range.rotation.x = -Math.PI / 2;
   range.position.y = 0.03;
-  scene.add(cursor, range);
+  // A slowly turning ring round the castle you will launch at.
+  const targetRing = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.74, 6), new THREE.MeshBasicMaterial({ color: 0xff5252, transparent: true, opacity: 0.85 }));
+  targetRing.rotation.x = -Math.PI / 2;
+  scene.add(cursor, range, targetRing);
+
+  // Land: a faint player-coloured tint on every cell a player may build on, redrawn when buildings change.
+  // The dark ring marks where you may not build, around enemy castles.
+  const flat = new THREE.PlaneGeometry(0.98, 0.98);
+  const tint = (color: number, opacity: number) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+  const landTints = PLAYER_COLORS.map((c) => tint(c, 0.2));
+  const noBuildTint = tint(0x10141c, 0.35);
+  let land: THREE.Mesh[][] = [], noBuild: THREE.Mesh[] = [], landKey = '';
 
   // World coordinates: the board is centred on the origin, x across and z down.
   const worldX = (cellX: number) => cellX - (size.width - 1) / 2;
@@ -64,17 +75,31 @@ export function createView(canvas: HTMLCanvasElement) {
     effects = [];
     size = state;
     const tile = new THREE.BoxGeometry(0.98, 0.3, 0.98);
-    const greens = [[0x6fae5a, 0x679f54], [0x9aaa58, 0x8f9e51]].map((pair) => pair.map((c) => new THREE.MeshLambertMaterial({ color: c })));
+    const greens = [0x6fae5a, 0x679f54].map((c) => new THREE.MeshLambertMaterial({ color: c }));
+    land = state.bases.map(() => []);
+    noBuild = [];
+    landKey = '';
+    const overlay = (material: THREE.Material, cell: number, height: number) => {
+      const mesh = new THREE.Mesh(flat, material);
+      place(mesh, cell);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.y = height;
+      mesh.visible = false;
+      board.add(mesh);
+      return mesh;
+    };
     state.rock.forEach((rock, cell) => {
       const x = cell % state.width, y = Math.floor(cell / state.width);
-      const ground = new THREE.Mesh(tile, greens[ownerOf(state, x)][(x + y) % 2]);
+      land.forEach((cells, p) => cells.push(overlay(landTints[p], cell, 0.004 * (p + 1))));
+      noBuild.push(overlay(noBuildTint, cell, 0.004 * (land.length + 1)));
+      const ground = new THREE.Mesh(tile, greens[(x + y) % 2]);
       place(ground, cell);
       ground.position.y = -0.15;
       ground.receiveShadow = true;
       board.add(ground);
       if (rock) { const r = rockModel(cell); place(r, cell); board.add(r); }
     });
-    state.bases.forEach((cell, team) => { const c = castleModel(team as 0 | 1); place(c, cell); board.add(c); });
+    state.bases.forEach((cell, player) => { const c = castleModel(player); place(c, cell); board.add(c); });
     frame();
   }
 
@@ -93,28 +118,50 @@ export function createView(canvas: HTMLCanvasElement) {
         const to = new THREE.Vector3(worldX(e.x / CELL), 0.3, worldZ(e.y / CELL));
         addEffect(mesh, 0.12, (p) => { mesh.position.lerpVectors(from, to, p); mesh.lookAt(to); });
       } else if (e.type === 'death') {
-        const mesh = new THREE.Mesh(puffGeometry, new THREE.MeshBasicMaterial({ color: TEAM_COLORS[e.team], transparent: true }));
+        const mesh = new THREE.Mesh(puffGeometry, new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[e.player], transparent: true }));
         mesh.position.set(worldX(e.x / CELL), 0.3, worldZ(e.y / CELL));
         addEffect(mesh, 0.35, (p) => { mesh.scale.setScalar(1 + p * 1.5); (mesh.material as THREE.MeshBasicMaterial).opacity = 1 - p; });
       }
     }
   }
 
-  function draw(state: State, cfg: Config, seconds: number) {
+  /** Fallen players have no land. `me` sees the no-build rings round their own enemies' castles. */
+  function drawLand(state: State, cfg: Config, me: Player) {
+    const key = `${me}|${state.baseHealth.map((h) => h > 0).join()}|${state.towers.filter((t) => t.demolish === 0).map((t) => t.uid).join()}`;
+    if (key === landKey) return;
+    landKey = key;
+    state.rock.forEach((rock, cell) => {
+      const open = !rock && !state.bases.includes(cell);
+      for (const p of players(state)) land[p][cell].visible = open && alive(state, p) && inTerritory(state, cfg.rules, p, cell);
+      noBuild[cell].visible = open && me >= 0 && cfg.rules.castleNoBuildRadius > 0 && nearEnemyCastle(state, cfg.rules, me, cell);
+    });
+  }
+
+  /** Draw the match as `me` sees it, with a ring on the castle they are aiming at (-1 for none). */
+  function draw(state: State, cfg: Config, seconds: number, me: Player, target: Player) {
+    drawLand(state, cfg, me);
+    targetRing.visible = target >= 0;
+    if (target >= 0) {
+      place(targetRing, state.bases[target]);
+      targetRing.position.y = 0.05;
+      targetRing.rotation.z = performance.now() / 900;
+    }
     const liveTowers = new Set(state.towers.map((t) => t.uid));
-    for (const [uid, model] of towers) if (!liveTowers.has(uid)) { board.remove(model); towers.delete(uid); }
+    for (const [uid, v] of towers) if (!liveTowers.has(uid)) { board.remove(v.model); towers.delete(uid); }
     for (const t of state.towers) {
-      let model = towers.get(t.uid);
-      if (!model) { towers.set(t.uid, (model = towerModel(t.id, t.team))); place(model, t.cell); board.add(model); }
+      let v = towers.get(t.uid);
+      const ruined = !alive(state, t.player);
+      if (v && v.ruined !== ruined) { board.remove(v.model); v = undefined; }
+      if (!v) { towers.set(t.uid, (v = { model: towerModel(t.id, t.player, ruined), ruined })); place(v.model, t.cell); board.add(v.model); }
       // A tower being sold sinks into the ground.
-      model.scale.y = t.demolish ? 0.25 + (0.75 * t.demolish) / cfg.rules.demolishTicks : 1;
+      if (!ruined) v.model.scale.y = t.demolish ? 0.25 + (0.75 * t.demolish) / cfg.rules.demolishTicks : 1;
     }
     const liveTroops = new Set(state.troops.map((t) => t.uid));
     for (const [uid, v] of troops) if (!liveTroops.has(uid)) { board.remove(v.model); troops.delete(uid); }
     for (const t of state.troops) {
       let v = troops.get(t.uid);
       if (!v) {
-        const model = troopModel(t.id, t.team);
+        const model = troopModel(t.id, t.player);
         const bar = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 0.05), new THREE.MeshBasicMaterial({ color: 0x8dff70 }));
         bar.position.y = 0.95;
         model.add(bar);
