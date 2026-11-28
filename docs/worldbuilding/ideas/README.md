@@ -3,3 +3,4 @@ Exploratory material is not canon. Capture context, possibilities, questions and
 - [Founding discussion](founding-discussion.md)
 
 - [Second worldbuilding discussion](contested-lyth.md)
+- [Wisp and Mire visual language](spirit-visual-language.md)
