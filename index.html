@@ -9,14 +9,22 @@
 <body>
   <canvas id="board"></canvas>
   <header>
-    <div class="side blue"><b>You</b><span>♥ <i id="hp0"></i></span><span>● <i id="gold"></i> gold</span><span>⚔ <i id="army0"></i></span></div>
+    <div id="players"></div>
     <div id="message" role="status"></div>
-    <div class="side red"><b>Bot</b><span>♥ <i id="hp1"></i></span><span>⚔ <i id="army1"></i></span></div>
     <p id="controller-help" hidden></p>
   </header>
+  <section id="lobby" hidden>
+    <h2>Room <code id="room-code"></code></h2>
+    <p><button id="copy-link">Copy invite link</button> Anyone with the link can join or watch.</p>
+    <label>Your name <input id="name" autocomplete="nickname" /></label>
+    <label>Mode <select id="room-mode"></select></label>
+    <ol id="seats"></ol>
+    <p id="watching"></p>
+    <p><button id="start">Start match</button> <span id="lobby-note"></span></p>
+  </section>
   <footer>
     <nav id="cards"></nav>
-    <nav><button id="launch">Launch <kbd>Space</kbd></button><button id="sell">Sell <kbd>X</kbd></button><button id="pause">Pause <kbd>P</kbd></button><button id="restart">Restart <kbd>R</kbd></button><button id="controller-open">Controller settings</button><button id="report">Copy bug report</button></nav>
+    <nav><select id="mode" aria-label="Game mode"></select><button id="launch">Launch <kbd>Space</kbd></button><button id="sell">Sell <kbd>X</kbd></button><button id="pause">Pause <kbd>P</kbd></button><button id="restart">Restart <kbd>R</kbd></button><button id="controller-open">Controller settings</button><button id="report">Copy bug report</button><button id="online">Play online</button></nav>
   </footer>
   <dialog id="controller-settings" aria-labelledby="controller-title">
     <h2 id="controller-title">Controller settings</h2>

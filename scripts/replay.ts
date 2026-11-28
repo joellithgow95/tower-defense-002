@@ -3,6 +3,10 @@ import { readFileSync } from 'node:fs';
 import { fingerprint, runReplay } from '../src/core/match';
 
 const report = JSON.parse(readFileSync(process.argv.at(-1)!, 'utf8'));
+if (report.version !== 2) {
+  console.log(`This report is version ${report.version}; this game only replays version 2. Check out an older commit to replay it.`);
+  process.exit(1);
+}
 const state = runReplay(report);
 const now = fingerprint(state);
 console.log({ tick: state.tick, baseHealth: state.baseHealth, winner: state.winner, towers: state.towers.length, troops: state.troops.length });
