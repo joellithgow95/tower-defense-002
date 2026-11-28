@@ -7,7 +7,7 @@ updated: 2026-11-28
 ---
 # Spirits
 
-The idea is Joel's (agreed 2026-11-28). Players aren't peoples. Each player is a force or spirit of the Lyth, and the creatures and folk who answer that spirit are its towers and troops. Those same creatures turn up on their own in the campaign, and a spirit's followers mix species, so a species never stands for a side (see [decision 0002](../decisions/0002-cultural-coexistence.md)).
+The idea is Joel's (agreed 2026-11-28; his answers to the first round of questions are folded in below). Players aren't peoples. Each player is a force or spirit of the Lyth, and the creatures and folk who answer that spirit are its towers and troops. Those same creatures turn up on their own in the campaign, and a spirit's followers mix species, so a species never stands for a side (see [decision 0002](../decisions/0002-cultural-coexistence.md)).
 
 This is a first pass, kept small. The numbers are guesses for playtesting.
 
@@ -29,14 +29,29 @@ They live in [`content/spirits.json`](../../content/spirits.json). The ids `wisp
 
 ## Two modes
 
-**Walk mode.** The spirit is a body on the board, which you steer like a Comet Crash ship. You act on what is within `reach` of where you stand:
-- At your own castle you can **launch** your garrison.
-- Beside one of your buildings you can **sell** it.
-- Map machinery such as sluices and calling stones can be added here later (see "Reach" below).
+**Walk mode.** The spirit is a body on the board, which you steer like a Comet Crash ship.
+- You can **build within `reach`** of where the body stands. The usual land rules and your kit still apply.
+- Later, map machinery such as sluices and calling stones will be used from here, also within reach.
 
-**Cursor mode.** The spirit becomes a wisp that flies wherever you point. This is the only mode that builds, within the usual land rules (`buildRadius`, `castleNoBuildRadius`). While the wisp flies, the body rests where you left it, drawn smaller, and it doesn't move. Switching back to walk puts you back in the body. You don't teleport to the wisp.
+**Cursor mode.** The spirit becomes a wisp that flies freely as the cursor. It can **build anywhere on your land** (`buildRadius`, `castleNoBuildRadius`). The body rests where you left it, drawn smaller, and doesn't move.
 
-Every spirit starts each match walking, standing on its castle.
+**Launch and sell work as before**, from the cursor side, in either mode. Space launches your garrison at your target, and X sells the building under the cursor. That is the accepted rule in [design.md](../design.md); spirits don't change it.
+
+**Switching back to walk puts you back in your body**, wherever the wisp had flown. In effect the wisp teleports home. Every spirit starts each match walking, standing on its own castle; its body is drawn on the castle roof so it can be seen.
+
+## What blocks the walking body
+
+| Thing | Walking body | Wisp (cursor) | Troops and routes |
+|---|---|---|---|
+| Rock `#` | Blocks | Flies over | Blocks troops, as before |
+| Your own and your allies' buildings and castles | Walk through | Flies over | Unchanged |
+| Enemy buildings, castles and ruins | Block | Flies over | Unchanged |
+| Troops | Walk through | Flies over | Unchanged |
+
+- Spirits never block troops and never affect routing. They aren't in `blockedCells`.
+- Future terrain follows the same table: deep water blocks the body, and shallows slow it.
+- The rule lives in `walkable()` in `src/core/sim.ts`. The body moves one axis at a time, so it slides along a wall.
+- A body caught inside a cell an enemy has just built on may always walk out.
 
 ## Where it lives in the state
 
@@ -54,45 +69,43 @@ Each player's chosen spirit goes in `config.spirits` (an array like `teams`). Re
 
 ## Movement as actions
 
-The game is lockstep: only actions travel online, never positions. So walking is sent as **changes of direction**, not as a position every tick:
+The game is lockstep: only actions travel online, never positions. So walking is sent as **changes of direction**, not as a position every tick.
 
 | Action | Effect |
 |---|---|
-| `{ type: 'spirit-move', player, x, y }` | Hold a direction (-1, 0 or 1 on each axis). Sent when the held keys or stick change, so a long walk costs two actions: start and stop |
+| `{ type: 'spirit-move', player, x, y }` | Hold a direction (-1, 0 or 1 on each axis). Sent when the keys, stick or mouse direction change, so a long walk costs a handful of actions. Refused with `needs-walk` while flying |
 | `{ type: 'spirit-mode', player, mode }` | Set walk or cursor. It sets the mode rather than toggling it, so a repeated message can't flip it back. Switching mode stops the body |
-| `build` | Unchanged shape. Refused with `needs-cursor` unless the spirit is flying, and `not-in-kit` for a tower outside its kit. The build itself says which cell, so the wisp's movements are never sent: your own screen draws your wisp at your cursor, and everyone else sees it jump to each cell it builds on |
-| `launch` | Unchanged shape. Refused with `needs-walk` while flying, and `out-of-reach` unless your castle is within reach |
-| `sell` | Unchanged shape. The building must be within reach of the walking body |
+| `build` | Unchanged shape. While walking, refused with `out-of-reach` unless the cell is within reach of the body. Refused with `not-in-kit` for a tower outside the kit. The build says which cell, so the wisp's movements are never sent: your screen draws your wisp at your cursor, and everyone else sees it appear at each cell it builds on |
+| `launch`, `sell` | Unchanged, in either mode |
 
-Each tick, a walking spirit moves `walkSpeed` units in its held direction, and about 707/1000 of that on each axis when walking diagonally, because the core has no square roots. It stays on the board. To stop a key or stick from getting stuck, the browser sends a stop when the window loses focus, the tab is hidden, the game pauses, the controller settings open or the controller disconnects. The room server (`src/net/room.ts`) cleans both new actions like the others: directions are clamped to -1..1, and an unknown mode is dropped.
+Movement details:
+- Each tick, a walking body moves `walkSpeed` units in its held direction. On a diagonal it moves about 707/1000 of that on each axis, because the core has no square roots.
+- It stays on the board, and it stops at anything that blocks it.
+- So that a key or button can't get stuck, the browser sends a stop when the window loses focus, the tab is hidden, the game pauses, the controller settings open or the controller disconnects. It also re-checks after an online catch-up.
+- The room server (`src/net/room.ts`) cleans the new actions like the others: directions are clamped to -1..1, and an unknown mode is dropped.
 
 ## Reach
 
-`withinReach(state, config, player)` in `src/core/sim.ts` lists what a walking spirit can act on, nearest first, with the castle first on a tie. It doesn't change anything. Today the list holds `castle` and `building`. Reach is measured from the body to the centre of the thing's cell, using squared distances like tower range.
+`inReach()` in `src/core/sim.ts` measures from the body to a cell's centre, using squared distances like tower range. Today it gates walking builds.
 
-To add a sluice or a calling stone later:
+`withinReach()` lists what a walking spirit could act on, nearest first: your castle and buildings for now. It doesn't change anything and nothing acts on it yet. To add a sluice or a calling stone:
 1. Add a new `kind` to the list.
-2. Give it its own action, for example `{ type: 'operate', player, x, y }`, that the core accepts only when that thing is within reach.
-3. In `main.ts`, map **Use** to it.
-
-"Use" (E, or A while walking) acts on the nearest *usable* thing. Today that is only your castle, so Use launches. Selling stays on its own button, so you can't sell by accident while reaching for the castle.
-
-## Spirits don't block troops
-
-Spirits float over rock, buildings and troops. They aren't in `blockedCells`, so they never change a route or stop a build, and troops pass straight through them.
+2. Give it its own action, for example `{ type: 'operate', player, x, y }`, which the core accepts only when the thing is in reach.
+3. Bind it on the screen.
 
 ## Controls
 
 | | Keyboard and mouse | Controller (solo, online or local multiplayer) |
 |---|---|---|
-| Walk | WASD or arrows (diagonals allowed) | Left stick or D-pad, 8 directions |
-| Walk / fly | Q | B / Circle (new rebindable `mode` binding) |
-| Build (flying) | Click a cell; 1, 2 pick from your kit | Move the cursor, A builds; LB/RB pick from your kit |
-| Use (walking) | E or Space at your castle launches | A at your castle launches; RT launches too |
-| Sell (walking) | X sells the nearest of your buildings in reach | X / Square |
-| Aim | T, or click an enemy castle (works in either mode) | LT |
+| Walk | WASD or arrows (diagonals allowed). **Mouse:** hold the right button, or hold the left button on a cell out of reach, and the body walks toward the pointer until you let go | Left stick or D-pad, 8 directions |
+| Walk / fly | Q | B / Circle (rebindable `mode` binding) |
+| Build while walking | Click a cell within reach (it lights up), or E builds on the pointed cell if in reach, else where you stand | A builds where you stand; LB/RB pick from your kit |
+| Build while flying | Click a cell on your land; 1, 2 pick from your kit | Move the cursor, A builds; LB/RB pick |
+| Sell | X sells the building under the mouse, in either mode | X / Square while flying |
+| Launch | Space | RT |
+| Aim | T, or click an enemy castle | LT |
 
-Walking with the mouse alone isn't supported yet. Clicking the board while walking tells you to press Q.
+Mouse walking turns the pointer's position into one of 8 directions on screen and stops a quarter of a cell from it. Only a change of direction is sent, the same as the keys.
 
 ## Choosing a spirit
 
@@ -102,15 +115,19 @@ Walking with the mouse alone isn't supported yet. Clicking the board while walki
 
 ## Bots and the simulator
 
-Bots don't walk. A bot's spirit stays on its castle and switches mode in the same tick as each move: it flies to build and walks to launch. It picks towers from its own spirit's kit. `npm run sim` runs unchanged.
+Bots don't walk. A bot's body stays on its castle and its wisp flies to build anywhere on its land. It picks towers from its own spirit's kit. `npm run sim` runs unchanged.
 
-## Open questions for Joel
+## Ideas for later (Joel, 2026-11-28; not built)
 
-1. **Return to the body, or land under the wisp?** Now, switching back to walk puts you back in the resting body. Landing where the wisp is would make walking almost pointless, since you could fly to your castle. Is resting the right feel?
-2. **Should building need the wisp at all?** The alternative is building in walk mode within reach, with the wisp used for long-range placement. That would make the modes a trade-off rather than a switch.
-3. **Can spirits interact with each other?** For example, Mire could slow an enemy body it stands next to, or Wisp could hide its body. Nothing like that exists yet.
-4. **Should the body be blocked by rock or buildings?** It floats over everything today, which keeps the core simple.
-5. **Kits:** both share the Archer Tower, because there are only three towers. Should each spirit get a tower of its own once there is more content?
-6. **Controller button for walk / fly:** B / Circle was free during play, but B also means "back" inside the settings dialog, so you can't capture it there by pressing it; it can only be reached by swapping. Is another button better (Y is Restart; L3 is free)?
-7. **Should a mouse-only player be able to walk** (for example, right-click to walk to a cell)? That would need either a "walk to" action or the existing direction action sent from the client.
-8. **Spirits in the campaign:** is the player character in the campaign also a spirit, or does that stay a multiplayer framing?
+- **Wisping away.** The body may become attackable later. If it is destroyed, or you choose to, you "wisp away": you give up the body and wait out a regeneration cooldown, but keep your per-life buffs. Per-life buffs don't exist yet. Design them together with "buildings get health" ([design.md](../design.md), Land).
+- **Affinities.** Spirits may grow stronger or weaker with terrain and events, for example the Mire in flooded ground. This is for later, alongside the terrain rules above.
+- **Asymmetry.** Joel likes asymmetric games. It is undecided whether each spirit gets reskins of shared towers or truly different towers.
+- **Campaign hero.** Maybe a human paired with a fairy (a spirit), and later the choice to play as the human or avatar or as the spirit. This is Joel's idea, undecided and exploratory; see [campaign foundations](../narrative/campaign.md).
+
+## Open questions
+
+1. **Asymmetry:** reskins of shared towers per spirit, or truly different towers? Both spirits share the Archer Tower today, because there are only three towers.
+2. **Can spirits affect each other?** For example, Mire slowing an enemy body near it, or Wisp hiding its body. This comes up again once bodies can be attacked (wisping away).
+3. **Mouse walking:** is "hold right, or hold left away from you" comfortable, or should it be click-to-walk-to-a-cell (a "walk to" action) instead?
+4. **Walk-build reach:** are 1.5 and 2 cells right, or should building on foot reach further so walking pays off?
+5. **Selling on a controller while walking** currently asks you to fly first. Should A or X while walking sell the building under you instead?
