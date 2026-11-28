@@ -108,13 +108,17 @@ function mireCursor(g: THREE.Group, color: number) {
   }
 }
 
-/** Provisional adapter; reconcile argument order and origin with the gameplay branch. */
-export function spiritModel(id: string, player: Player, form: 'walk' | 'cursor') {
+/** Height the cursor form floats at; the view only bobs it around ground level. */
+const CURSOR_HEIGHT = 0.74;
+
+/** A player's spirit, by spirit id and mode. An unknown spirit shows as a plain light. */
+export function spiritModel(id: string, mode: SpiritMode, player: Player) {
   const g = new THREE.Group();
   const color = PLAYER_COLORS[player];
-  if (id === 'wisp') (form === 'walk' ? wispWalk : wispCursor)(g, color);
-  else if (id === 'mire') (form === 'walk' ? mireWalk : mireCursor)(g, color);
+  if (id === 'wisp') (mode === 'walk' ? wispWalk : wispCursor)(g, color);
+  else if (id === 'mire') (mode === 'walk' ? mireWalk : mireCursor)(g, color);
   else spiritLight(g, color, 0.2, 0.25, 0.3);
+  if (mode === 'cursor') for (const c of g.children) c.position.y += CURSOR_HEIGHT;
   return g;
 }
 
@@ -193,46 +197,3 @@ export function rockModel(seed: number) {
   return g;
 }
 
-const MIST = 0xeaf6ff, PEAT = 0x4b3a2a, MOSS = 0x5f7f3a;
-
-/**
- * Placeholder spirits, one look per spirit and mode. Real models come later: replace a function here,
- * keeping the spirit id and mode as the key. Walk mode stands on the ground; cursor mode floats.
- */
-const spirits: Record<string, Record<SpiritMode, (g: THREE.Group, color: number) => void>> = {
-  wisp: {
-    // A tall, light flame of mist with a bright head.
-    walk(g, color) {
-      part(g, cone(0.2, 0.62, 6), color, 0, 0.31, 0);
-      part(g, lump(0.16), MIST, 0, 0.72, 0);
-    },
-    // A small light with a coloured halo.
-    cursor(g, color) {
-      part(g, lump(0.12), MIST, 0, 0.9, 0);
-      part(g, tube(0.22, 0.22, 0.04, 8), color, 0, 0.9, 0);
-    },
-  },
-  mire: {
-    // A squat, heavy mound of peat and moss.
-    walk(g, color) {
-      part(g, tube(0.32, 0.38, 0.3, 7), PEAT, 0, 0.15, 0);
-      part(g, lump(0.26), color, 0, 0.42, 0);
-      part(g, box(0.5, 0.06, 0.12), MOSS, 0, 0.3, 0.2);
-    },
-    // A low, dark clot of bog with a coloured rim.
-    cursor(g, color) {
-      part(g, lump(0.16), PEAT, 0, 0.8, 0).scale.y = 0.6;
-      part(g, tube(0.24, 0.2, 0.06, 7), color, 0, 0.74, 0);
-    },
-  },
-};
-
-/** A player's spirit, by spirit id and mode. An unknown spirit shows as a plain coloured ball. */
-export function spiritModel(id: string, mode: SpiritMode, player: Player) {
-  const g = new THREE.Group();
-  const color = PLAYER_COLORS[player];
-  const look = spirits[id]?.[mode];
-  if (look) look(g, color);
-  else part(g, lump(0.2), color, 0, mode === 'cursor' ? 0.9 : 0.25, 0);
-  return g;
-}
