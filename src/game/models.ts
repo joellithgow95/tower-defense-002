@@ -3,7 +3,7 @@
  * Art ideas start here: change a colour or add a shape, save, and look at the game.
  */
 import * as THREE from 'three';
-import type { Player } from '../core/types';
+import type { Player, SpiritMode } from '../core/types';
 
 /** One colour per player: blue, orange, yellow, purple. Player 0's is first. */
 export const PLAYER_COLORS = [0x4da3ff, 0xff7a59, 0xffd166, 0xb07cff] as const;
@@ -108,5 +108,49 @@ export function rockModel(seed: number) {
   const g = new THREE.Group();
   part(g, lump(0.38), 0x7d8594, 0, 0.2, 0).rotation.set(seed, seed * 1.7, 0);
   part(g, lump(0.19), 0x9aa1ad, 0.26, 0.1, 0.22).rotation.set(seed * 2.3, seed, 0);
+  return g;
+}
+
+const MIST = 0xeaf6ff, PEAT = 0x4b3a2a, MOSS = 0x5f7f3a;
+
+/**
+ * Placeholder spirits, one look per spirit and mode. Real models come later: replace a function here,
+ * keeping the spirit id and mode as the key. Walk mode stands on the ground; cursor mode floats.
+ */
+const spirits: Record<string, Record<SpiritMode, (g: THREE.Group, color: number) => void>> = {
+  wisp: {
+    // A tall, light flame of mist with a bright head.
+    walk(g, color) {
+      part(g, cone(0.2, 0.62, 6), color, 0, 0.31, 0);
+      part(g, lump(0.16), MIST, 0, 0.72, 0);
+    },
+    // A small light with a coloured halo.
+    cursor(g, color) {
+      part(g, lump(0.12), MIST, 0, 0.9, 0);
+      part(g, tube(0.22, 0.22, 0.04, 8), color, 0, 0.9, 0);
+    },
+  },
+  mire: {
+    // A squat, heavy mound of peat and moss.
+    walk(g, color) {
+      part(g, tube(0.32, 0.38, 0.3, 7), PEAT, 0, 0.15, 0);
+      part(g, lump(0.26), color, 0, 0.42, 0);
+      part(g, box(0.5, 0.06, 0.12), MOSS, 0, 0.3, 0.2);
+    },
+    // A low, dark clot of bog with a coloured rim.
+    cursor(g, color) {
+      part(g, lump(0.16), PEAT, 0, 0.8, 0).scale.y = 0.6;
+      part(g, tube(0.24, 0.2, 0.06, 7), color, 0, 0.74, 0);
+    },
+  },
+};
+
+/** A player's spirit, by spirit id and mode. An unknown spirit shows as a plain coloured ball. */
+export function spiritModel(id: string, mode: SpiritMode, player: Player) {
+  const g = new THREE.Group();
+  const color = PLAYER_COLORS[player];
+  const look = spirits[id]?.[mode];
+  if (look) look(g, color);
+  else part(g, lump(0.2), color, 0, mode === 'cursor' ? 0.9 : 0.25, 0);
   return g;
 }

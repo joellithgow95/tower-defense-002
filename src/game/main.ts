@@ -4,10 +4,10 @@
  * match only as far as the room's server has confirmed, so every browser sees the same game.
  */
 import { createBot } from '../core/bot';
-import { type Mode, modes } from '../core/config';
+import { type Mode, modes, withSpirits } from '../core/config';
 import { Match, fingerprint } from '../core/match';
-import { TICKS_PER_SECOND, alive, checkBuild, enemies, players } from '../core/sim';
-import type { Action, Config, GameEvent, Player, Refusal, State } from '../core/types';
+import { CELL, TICKS_PER_SECOND, alive, checkBuild, defaultSpirits, enemies, players, withinReach } from '../core/sim';
+import type { Action, Config, GameEvent, Player, Refusal, SpiritMode, State } from '../core/types';
 import { problems } from '../core/validate';
 import { Lockstep } from '../net/lockstep';
 import { MAX_NAME, type ServerMessage, TURN_TICKS } from '../net/protocol';
@@ -17,7 +17,7 @@ import { createSingleGamepadInput } from './gamepad';
 import { createLocalControllers } from './local-controllers';
 import { PLAYER_COLORS } from './models';
 import { ROOM_CODE, connect, newRoomCode } from './online';
-import { createView } from './view';
+import { type LocalSpirit, createView } from './view';
 
 const $ = (id: string) => document.getElementById(id)!;
 const canvas = $('board') as HTMLCanvasElement;
@@ -54,6 +54,7 @@ $('controller-open').onclick = () => settings.open(profileFor(me), local ? me : 
 function suspendControllers() {
   gamepad.suspend();
   controllers.suspend();
+  stopWalking();
 }
 
 const roomParam = new URLSearchParams(location.search).get('room');
@@ -72,8 +73,25 @@ let messageUntil = 0;
 let controllerActive = false;
 let cursor: Cell = { x: 0, y: 0 };
 let owed = 0;
-type Seat = { target: Player; selected: string; cursor: Cell };
+type Dir = { x: number; y: number };
+/** `held` is the walking direction last sent for this seat. */
+type Seat = { target: Player; selected: string; cursor: Cell; held: Dir };
 let seats: Seat[] = [];
+
+// Spirits. The match state is the truth; `spiritModes` is what this screen last asked for, so a quick
+// second press of Q flips back even before the server has confirmed the first.
+const spiritList = modes.duel.config.content.spirits;
+let mySpirit = Object.keys(spiritList)[0];
+let localSpirits: string[] = [];
+let spiritModes: SpiritMode[] = [];
+const keysDown = new Set<string>();
+let padHeld: Dir = { x: 0, y: 0 };
+let sentHeld: Dir = { x: 0, y: 0 };
+const STILL: Dir = { x: 0, y: 0 };
+const WALK_KEYS: Record<string, Dir> = {
+  w: { x: 0, y: -1 }, arrowup: { x: 0, y: -1 }, s: { x: 0, y: 1 }, arrowdown: { x: 0, y: 1 },
+  a: { x: -1, y: 0 }, arrowleft: { x: -1, y: 0 }, d: { x: 1, y: 0 }, arrowright: { x: 1, y: 0 },
+};
 
 // Online only.
 let room: Extract<ServerMessage, { t: 'room' }> | null = null;
@@ -156,10 +174,16 @@ function show(next: Match, nextConfig: Config) {
     const firstTower = Object.keys(config.content.towers)[0];
     seats = bases.map((cell, player) => ({
       target: foes(match.state, player)[0] ?? -1,
-      selected: firstTower,
+      selected: kitOf(player).includes(firstTower) ? firstTower : kitOf(player)[0],
       cursor: { x: cell % width, y: Math.floor(cell / width) },
+      held: { ...STILL },
     }));
   }
+  spiritModes = match.state.spirits.map((sp) => sp.mode);
+  keysDown.clear();
+  padHeld = { ...STILL };
+  sentHeld = { ...STILL };
+  showKit();
   cursor = { x: home % width, y: Math.floor(home / width) };
   if (controllerActive) hover = cursor;
   view.reset(match.state);
@@ -174,7 +198,8 @@ function restart(next: Mode = mode) {
   }
   mode = next;
   const seed = Date.now();
-  show(new Match(modes[mode].config), modes[mode].config);
+  const nextConfig = configFor(mode);
+  show(new Match(nextConfig), nextConfig);
   bots = players(match.state).map((p) => createBot(p, seed + p));
   queued = [];
   owed = 0;
@@ -183,8 +208,39 @@ function restart(next: Mode = mode) {
   if (local) { say(''); return; }
   try { localStorage.setItem('mode', mode); } catch { /* private window: just don't remember */ }
   const aim = foes(match.state).length > 1 ? ' Click an enemy castle (or press T) to pick who to attack.' : '';
-  say(`Build on your land (blue): towers are walls, Barracks and Knight Halls train troops. Press Space to launch them.${aim}`, 8);
+  say(`You are the ${spiritList[mySpirit].label}. Walk with WASD or the arrows. Press Q to fly as a wisp and build on your land (blue). Walk back to your castle and press Space to launch your troops.${aim}`, 10);
 }
+
+/** A mode's config with this screen's spirit choices: yours offline, each seat's in local multiplayer. */
+function configFor(next: Mode): Config {
+  const base = modes[next].config;
+  const spirits = defaultSpirits(base.teams.length);
+  if (local) localSpirits.forEach((id, p) => { if (p < spirits.length) spirits[p] = id; });
+  else spirits[0] = mySpirit;
+  return withSpirits(base, spirits);
+}
+
+/** The towers a player's spirit can build. */
+const kitOf = (p: Player) => config.content.spirits[match.state.spirits[Math.max(p, 0)].id].kit;
+const spiritLabel = (p: Player) => config.content.spirits[match.state.spirits[p].id].label;
+/** The cell under a spirit's body, where its wisp sets off from. */
+function bodyCell(p: Player): Cell {
+  const sp = match.state.spirits[p];
+  return { x: Math.round(sp.x / CELL), y: Math.round(sp.y / CELL) };
+}
+const walking = (p: Player = me) => p >= 0 && spiritModes[p] === 'walk';
+
+/** Only your spirit's towers get a card, numbered 1, 2, 3 in order. */
+function showKit() {
+  const kit = kitOf(me);
+  let n = 0;
+  for (const c of cards) {
+    c.button.hidden = local || !kit.includes(c.id);
+    if (!c.button.hidden) c.key.textContent = String(++n);
+  }
+  if (!kit.includes(selected)) selected = kit[0];
+}
+const kitCards = () => cards.filter((c) => !c.button.hidden);
 
 /** Your move: offline it waits for the next tick; online it goes to the server, which stamps it with a tick. */
 function act(action: Action) {
@@ -200,7 +256,7 @@ const cards = Object.entries(modes.duel.config.content.towers).map(([id, def], i
   button.append(def.label, ' ', key, document.createElement('br'), cost);
   button.onclick = () => (selected = id);
   $('cards').append(button);
-  return { id, def, button };
+  return { id, def, button, key };
 });
 
 const modeSelect = $('mode') as HTMLSelectElement;
@@ -212,8 +268,23 @@ modeSelect.onchange = () => {
   modeSelect.blur();
 };
 
+const spiritSelect = $('spirit') as HTMLSelectElement;
+const spiritOptions = (select: HTMLSelectElement) => {
+  for (const [id, sp] of Object.entries(spiritList)) select.append(Object.assign(new Option(sp.label, id), { title: `${sp.about} ${sp.passive}` }));
+};
+spiritOptions(spiritSelect);
+try { const saved = localStorage.getItem('spirit'); if (saved && saved in spiritList) mySpirit = saved; } catch { /* use the default */ }
+spiritSelect.value = mySpirit;
+spiritSelect.onchange = () => {
+  mySpirit = spiritSelect.value;
+  try { localStorage.setItem('spirit', mySpirit); } catch { /* private window: just don't remember */ }
+  spiritSelect.blur();
+  restart();
+};
+
 function enterLobby(next: Mode) {
   joining = true;
+  localSpirits = defaultSpirits(modes[next].config.teams.length);
   controllers.reset(modes[next].config.teams.length);
   controllerActive = false;
   hover = null;
@@ -236,7 +307,7 @@ $('local').onclick = () => {
   document.body.classList.toggle('local', local);
   suspendControllers();
   $('controller-open').textContent = local ? 'Player 1 controller settings' : 'Controller settings';
-  for (const id of ['cards', 'launch', 'sell']) $(id).hidden = local;
+  for (const id of ['cards', 'launch', 'sell', 'spirit']) $(id).hidden = local;
   $('local').textContent = local ? 'Solo play' : 'Local multiplayer';
   if (local) enterLobby('fourWay');
   else {
@@ -249,21 +320,80 @@ $('local').onclick = () => {
 function build() {
   if (hover && !paused) act({ type: 'build', player: me, tower: selected, ...hover });
 }
+/** Sell the nearest of your buildings within your spirit's reach. */
 function sell() {
-  if (hover && !paused) act({ type: 'sell', player: me, ...hover });
+  if (me < 0 || paused) return;
+  const action = sellNearby(me);
+  if (typeof action === 'string') say(action);
+  else act(action);
+}
+function sellNearby(p: Player): Action | string {
+  if (!walking(p)) return 'Walk to one of your buildings to sell it (Q to walk).';
+  const near = withinReach(match.state, config, p).find((r) => r.kind === 'building');
+  if (!near) return 'Walk up to one of your buildings to sell it.';
+  return { type: 'sell', player: p, x: near.cell % match.state.width, y: Math.floor(near.cell / match.state.width) };
 }
 function launch() {
   if (target >= 0 && !paused) act({ type: 'launch', player: me, target });
 }
+/**
+ * Use the nearest thing your spirit can reach. Today that is only your castle, which launches;
+ * sluices and calling stones will join `withinReach` in src/core/sim.ts and get their own action here.
+ */
+function interact() {
+  if (me < 0 || paused) return;
+  if (!walking()) { say('Walk to use things (Q to walk).'); return; }
+  const near = withinReach(match.state, config, me).find((r) => r.kind === 'castle');
+  if (near) launch();
+  else say('Walk to your castle to launch your troops.');
+}
+
+/** Walk or fly. The body stops when the wisp takes off; the wisp sets off from where the body stands. */
+function toggleMode() {
+  if (me < 0 || paused || !alive(match.state, me) || match.state.winner !== null) return;
+  const next: SpiritMode = walking() ? 'cursor' : 'walk';
+  spiritModes[me] = next;
+  act({ type: 'spirit-mode', player: me, mode: next });
+  sentHeld = { ...STILL };
+  if (next === 'cursor') {
+    cursor = bodyCell(me);
+    if (controllerActive) hover = cursor;
+  } else syncHeld();
+}
+
+/** Send your walking direction, only when it changes: a held key costs one action, not one per tick. */
+function syncHeld() {
+  if (me < 0 || !walking() || paused || !alive(match.state, me)) return;
+  let x = padHeld.x, y = padHeld.y;
+  if (!x && !y) for (const key of keysDown) { x += WALK_KEYS[key].x; y += WALK_KEYS[key].y; }
+  const held = { x: Math.sign(x), y: Math.sign(y) };
+  if (held.x === sentHeld.x && held.y === sentHeld.y) return;
+  sentHeld = held;
+  act({ type: 'spirit-move', player: me, ...held });
+}
+
+/** Let go of everything, so a missed key-up can't leave a spirit walking on its own. */
+function stopWalking() {
+  keysDown.clear();
+  padHeld = { ...STILL };
+  if (me >= 0 && (sentHeld.x || sentHeld.y)) act({ type: 'spirit-move', player: me, x: 0, y: 0 });
+  sentHeld = { ...STILL };
+  if (!local) return;
+  seats.forEach((seat, player) => {
+    if (seat.held.x || seat.held.y) queued.push({ type: 'spirit-move', player, x: 0, y: 0 });
+    seat.held = { ...STILL };
+  });
+}
 /** Offline only: an online match can't pause for one player. */
 function togglePause() {
   if (net || joining || controllers.disconnected() || match.state.winner !== null) return;
+  if (!paused) stopWalking();
   paused = !paused;
   say(paused ? 'Paused' : 'Go!', paused ? 1e6 : 1);
 }
 $('pause').onclick = togglePause;
 $('restart').onclick = () => local ? startMatch() : restart();
-$('sell').onclick = () => say('Point at one of your towers and press X.');
+$('sell').onclick = sell;
 $('launch').onclick = launch;
 $('online').onclick = () => { location.search = net ? '' : `?room=${newRoomCode()}`; };
 $('report').onclick = async () => {
@@ -282,6 +412,7 @@ function buildOrAim() {
   if (local || !hover || paused) return;
   const castle = match.state.bases.indexOf(hover.y * match.state.width + hover.x);
   if (castle >= 0 && foes(match.state).includes(castle)) target = castle;
+  else if (walking()) say('Press Q to fly as the wisp, then click to build.');
   else build();
 }
 
@@ -299,13 +430,26 @@ addEventListener('keydown', (e) => {
     if (key === 'r' && !e.repeat) startMatch();
     return;
   }
+  if (key in WALK_KEYS) {
+    e.preventDefault();
+    keysDown.add(key);
+    syncHeld();
+    return;
+  }
+  if (key === 'q' && !e.repeat) toggleMode();
+  if (key === 'e' && !e.repeat) interact();
   if (key === 'x') sell();
   if (key === ' ') { e.preventDefault(); launch(); }
   if (key === 't') cycleTarget();
   if (key === 'p' && !e.repeat) togglePause();
   if (key === 'r' && !e.repeat) restart();
-  const card = cards[Number(key) - 1];
+  const card = kitCards()[Number(key) - 1];
   if (card) selected = card.id;
+});
+addEventListener('keyup', (e) => {
+  const key = e.key.toLowerCase();
+  if (!keysDown.delete(key)) return;
+  syncHeld();
 });
 
 /** "6 Soldiers, 2 Knights": what is waiting in a castle. */
@@ -343,6 +487,7 @@ function readController(now: number) {
   if (!input && controllerActive) {
     controllerActive = false;
     hover = null;
+    stopWalking();
     settings.close();
     if (!net && !paused && match.state.winner === null) {
       togglePause();
@@ -369,7 +514,9 @@ function readController(now: number) {
     ? `${label(bindings.restart)}  ${net ? 'Lobby' : 'Play again'}`
     : paused
       ? `${label(bindings.pause)}  Resume · ${label(bindings.restart)}  Restart`
-      : `Stick / D-pad  Move · ${towerButtons}  Tower · ${label(bindings.build)}  Build or aim · ${label(bindings.sell)}  Sell · ${label(bindings.launch)}  Launch${pauseHelp}`;
+      : walking()
+        ? `Stick / D-pad  Walk · ${label(bindings.mode)}  Fly to build · ${label(bindings.build)}  Use (launch at your castle) · ${label(bindings.sell)}  Sell nearby · ${label(bindings.target)}  Aim${pauseHelp}`
+        : `Stick / D-pad  Fly · ${towerButtons}  Tower · ${label(bindings.build)}  Build or aim · ${label(bindings.mode)}  Walk${pauseHelp}`;
   const helpWithSettings = `${help} · View / Create  Settings`;
   if (controllerHelp.textContent !== helpWithSettings) controllerHelp.textContent = helpWithSettings;
 
@@ -378,6 +525,10 @@ function readController(now: number) {
     return;
   }
   const tower = Number(pressed(bindings.next)) - Number(pressed(bindings.previous));
+  if (input.held.x !== padHeld.x || input.held.y !== padHeld.y) {
+    padHeld = input.held;
+    if (walking()) { controllerActive = true; syncHeld(); }
+  }
   if (!input.move && !input.pressed.some((button) => Object.values(bindings).includes(button))) return;
   if (!controllerActive && hover) cursor = hover;
   controllerActive = true;
@@ -392,7 +543,8 @@ function readController(now: number) {
   }
   if (paused || ended) return;
 
-  if (input.move) {
+  if (pressed(bindings.mode)) toggleMode();
+  if (input.move && !walking()) {
     const { width, height } = match.state;
     cursor = {
       x: Math.min(width - 1, Math.max(0, cursor.x + input.move.x)),
@@ -401,13 +553,17 @@ function readController(now: number) {
     hover = cursor;
   }
   if (tower) {
-    const index = cards.findIndex((card) => card.id === selected);
-    selected = cards[(index + tower + cards.length) % cards.length].id;
+    const kit = kitCards();
+    const index = kit.findIndex((card) => card.id === selected);
+    selected = kit[(index + tower + kit.length) % kit.length].id;
   }
   if (pressed(bindings.target)) cycleTarget();
   if (pressed(bindings.launch)) launch();
   if (pressed(bindings.sell)) sell();
-  else if (pressed(bindings.build)) buildOrAim();
+  else if (pressed(bindings.build)) {
+    if (walking()) interact();
+    else buildOrAim();
+  }
 }
 
 function readLocalControllers(now: number) {
@@ -424,7 +580,7 @@ function readLocalControllers(now: number) {
       ? `${controllers.humans()}/${seats.length} joined · A / Cross  Join · ${label('pause')}  Start · Empty seats are bots`
       : paused || match.state.winner !== null
         ? `${label('pause')}  Resume · ${label('restart')}  Restart · View / Create  Settings`
-        : 'Stick / D-pad  Move · View / Create  Open your controls';
+        : `Stick / D-pad  Walk or fly · ${label('mode')}  Walk / fly · View / Create  Open your controls`;
   if (controllerHelp.textContent !== help) controllerHelp.textContent = help;
   const modal = settings.active;
   for (const { pad, device, input } of inputs) {
@@ -458,19 +614,38 @@ function readLocalControllers(now: number) {
       }
       if (pressed(bindings.restart) && (paused || match.state.winner !== null)) { startMatch(); break; }
     }
+    const turn = Number(pressed(bindings.next)) - Number(pressed(bindings.previous));
+    // While joining, the tower buttons choose your spirit.
+    if (joining && turn) {
+      const ids = Object.keys(spiritList);
+      localSpirits[player] = ids[(ids.indexOf(localSpirits[player]) + turn + ids.length) % ids.length];
+      restart();
+      break;
+    }
     if (joining || disconnect || paused || match.state.winner !== null || !alive(match.state, player)) continue;
     const { width, height } = match.state;
-    const { move } = input;
-    if (move) {
+    const { move, held } = input;
+    if (pressed(bindings.mode)) {
+      const next: SpiritMode = walking(player) ? 'cursor' : 'walk';
+      spiritModes[player] = next;
+      queued.push({ type: 'spirit-mode', player, mode: next });
+      seat.held = { ...STILL };
+      if (next === 'cursor') seat.cursor = bodyCell(player);
+    }
+    if (walking(player)) {
+      if (held.x !== seat.held.x || held.y !== seat.held.y) {
+        seat.held = held;
+        queued.push({ type: 'spirit-move', player, ...held });
+      }
+    } else if (move) {
       seat.cursor = {
         x: Math.max(0, Math.min(width - 1, seat.cursor.x + move.x)),
         y: Math.max(0, Math.min(height - 1, seat.cursor.y + move.y)),
       };
     }
-    const turn = Number(pressed(bindings.next)) - Number(pressed(bindings.previous));
     if (turn) {
-      const index = cards.findIndex((card) => card.id === seat.selected);
-      seat.selected = cards[(index + turn + cards.length) % cards.length].id;
+      const kit = kitOf(player);
+      seat.selected = kit[(kit.indexOf(seat.selected) + turn + kit.length) % kit.length];
     }
     if (pressed(bindings.target)) {
       const options = foes(match.state, player);
@@ -478,8 +653,16 @@ function readLocalControllers(now: number) {
     }
     const aim = seat.target;
     if (pressed(bindings.launch) && aim >= 0) queued.push({ type: 'launch', player, target: aim });
-    if (pressed(bindings.sell)) queued.push({ type: 'sell', player, ...seat.cursor });
-    else if (pressed(bindings.build)) queued.push({ type: 'build', player, tower: seat.selected, ...seat.cursor });
+    if (pressed(bindings.sell)) {
+      const action = sellNearby(player);
+      if (typeof action === 'string') say(`${name(player)} · ${action}`);
+      else queued.push(action);
+    } else if (pressed(bindings.build)) {
+      // Walking, A uses what is in reach (your castle launches); flying, it builds.
+      if (!walking(player)) queued.push({ type: 'build', player, tower: seat.selected, ...seat.cursor });
+      else if (aim >= 0 && withinReach(match.state, config, player).some((r) => r.kind === 'castle')) queued.push({ type: 'launch', player, target: aim });
+      else say(`${name(player)} · Walk to your castle to launch your troops.`);
+    }
   }
 }
 
@@ -505,6 +688,14 @@ function drawLobby() {
     li.style.borderColor = colorOf(p);
     const teamOf = modes[room!.mode].config.teams[p];
     li.append(Object.assign(document.createElement('b'), { textContent: seat.name ?? 'Bot' }), ` · team ${teamOf + 1}${seat.name && !seat.online ? ' · away' : ''}`);
+    if (p === room!.you) {
+      const choose = document.createElement('select');
+      choose.ariaLabel = 'Your spirit';
+      spiritOptions(choose);
+      choose.value = seat.spirit;
+      choose.onchange = () => net!.send({ t: 'spirit', spirit: choose.value });
+      li.append(choose);
+    } else li.append(` · ${spiritList[seat.spirit]?.label ?? seat.spirit}`);
     if (p === room!.you) li.append(button('Stand up', () => net!.send({ t: 'sit', seat: null })));
     else if (!seat.name) li.append(button('Sit here', () => net!.send({ t: 'sit', seat: p })));
     list.append(li);
@@ -515,10 +706,15 @@ const button = (text: string, onclick: () => void) => Object.assign(document.cre
 
 function onServer(m: ServerMessage) {
   if (m.t === 'room') {
-    const lobbyChanged = !room || room.mode !== m.mode || room.phase !== m.phase;
+    const spirits = m.seats.map((seat) => seat.spirit);
+    const lobbyChanged = !room || room.mode !== m.mode || room.phase !== m.phase || room.seats.map((seat) => seat.spirit).join() !== spirits.join();
     room = m;
     me = m.you ?? -1;
-    if (m.phase === 'lobby' && lobbyChanged) { lock = null; show(new Match(modes[m.mode].config), modes[m.mode].config); }
+    if (m.phase === 'lobby' && lobbyChanged) {
+      lock = null;
+      const preview = withSpirits(modes[m.mode].config, spirits);
+      show(new Match(preview), preview);
+    }
     else buildBadges();
     drawLobby();
   } else if (m.t === 'start') {
@@ -556,7 +752,7 @@ if (roomCode) {
     try { await navigator.clipboard.writeText(location.href); say('Link copied. Send it to your friends.'); }
     catch { prompt('Send your friends this link:', location.href); }
   };
-  for (const id of ['mode', 'pause', 'local']) $(id).hidden = true;
+  for (const id of ['mode', 'spirit', 'pause', 'local']) $(id).hidden = true;
   $('online').textContent = 'Leave room';
   net = connect(roomCode, nameInput.value, onServer, (connected, why) => {
     if (!connected) say(why ? `${why}.` : 'Connection lost. Reconnecting…', why ? 1e6 : 30);
@@ -628,7 +824,8 @@ function draw(now: number, seconds: number) {
       continue;
     }
     const gold = p === me ? ` · ● ${s.gold[p]} gold` : '';
-    text.textContent = alive(s, p) ? `♥ ${s.baseHealth[p]}${gold} · ⚔ ${armyText(s.garrison[p])}` : 'fallen';
+    const spirit = `${spiritLabel(p)}${s.spirits[p].mode === 'cursor' ? ' (flying)' : ''}`;
+    text.textContent = alive(s, p) ? `${spirit} · ♥ ${s.baseHealth[p]}${gold} · ⚔ ${armyText(s.garrison[p])}` : 'fallen';
     el.classList.toggle('target', p === target);
     el.classList.toggle('fallen', !alive(s, p));
   }
@@ -637,15 +834,20 @@ function draw(now: number, seconds: number) {
     c.button.classList.toggle('poor', me < 0 || s.gold[me] < c.def.cost);
   }
   if (now > messageUntil) $('message').textContent = '';
-  const own = hover && s.towers.find((t) => t.cell === hover!.y * s.width + hover!.x);
+  // The build cursor is the wisp: only shown while flying.
+  const aimCell = me >= 0 && !walking() ? hover : null;
+  const own = aimCell && s.towers.find((t) => t.cell === aimCell.y * s.width + aimCell.x);
   const def = config.content.towers[own ? own.id : selected];
-  const ok = me >= 0 && (!!own || !checkBuild(s, config, me, selected, hover?.x ?? -1, hover?.y ?? -1));
+  const ok = me >= 0 && (!!own || !checkBuild(s, config, me, selected, aimCell?.x ?? -1, aimCell?.y ?? -1));
   for (let p = 0; p < PLAYER_COLORS.length; p++) {
     if (local && p < seats.length) continue;
     const active = !local && p === me;
-    view.highlight(p, active ? hover : null, ok, def.kind === 'shooter' ? def.range / 1000 : 0, active && target >= 0 ? s.bases[target] : -1);
+    view.highlight(p, active ? aimCell : null, ok, def.kind === 'shooter' ? def.range / 1000 : 0, active && target >= 0 ? s.bases[target] : -1);
   }
-  view.draw(s, config, seconds, local || me < 0 ? null : me);
+  const locals: LocalSpirit[] = local
+    ? seats.flatMap((seat, player) => (human(player) ? [{ player, wisp: walking(player) ? null : seat.cursor }] : []))
+    : me >= 0 ? [{ player: me, wisp: aimCell }] : [];
+  view.draw(s, config, seconds, local || me < 0 ? null : me, locals);
 }
 function drawLocalSeat(p: Player, el: HTMLElement, text: HTMLElement) {
   const s = match.state;
@@ -654,14 +856,15 @@ function drawLocalSeat(p: Player, el: HTMLElement, text: HTMLElement) {
   if (!options.includes(seat.target)) seat.target = options[0] ?? -1;
   const occupied = human(p);
   const tower = seat.selected;
-  el.querySelector('b')!.textContent = `${name(p)}${controllers.seat(p) === -1 ? ' · Disconnected' : ''}`;
+  const flying = s.spirits[p].mode === 'cursor' ? ' (flying)' : '';
+  el.querySelector('b')!.textContent = `${name(p)} · ${spiritLabel(p)}${flying}${controllers.seat(p) === -1 ? ' · Disconnected' : ''}`;
   const gold = occupied ? ` · ● ${s.gold[p]} gold` : '';
   const towerDef = config.content.towers[tower];
   const selection = occupied ? ` · ${towerDef.label} (${towerDef.cost} gold)` : '';
   const aim = occupied && seat.target >= 0 ? ` · Aim: ${name(seat.target)}` : '';
   text.textContent = alive(s, p) ? `♥ ${s.baseHealth[p]}${gold} · ⚔ ${armyText(s.garrison[p])}${selection}${aim}` : 'fallen';
   el.classList.toggle('fallen', !alive(s, p));
-  const cell = occupied && alive(s, p) ? seat.cursor : null;
+  const cell = occupied && alive(s, p) && !walking(p) ? seat.cursor : null;
   const own = cell && s.towers.find((t) => t.player === p && t.cell === cell.y * s.width + cell.x);
   const def = config.content.towers[own ? own.id : tower];
   const ok = !!cell && (!!own || !checkBuild(s, config, p, tower, cell.x, cell.y));

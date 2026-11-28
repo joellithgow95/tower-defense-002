@@ -1,8 +1,11 @@
 /** Draws a match. It only reads the state; it never changes the game. */
 import * as THREE from 'three';
-import { CELL, alive, inTerritory, nearEnemyCastle, players, troopPosition } from '../core/sim';
+import { CELL, alive, inTerritory, nearEnemyCastle, players, troopHealth, troopPosition } from '../core/sim';
 import type { Config, GameEvent, Player, State } from '../core/types';
-import { PLAYER_COLORS, castleModel, rockModel, towerModel, troopModel } from './models';
+
+/** A player this screen controls, and where its wisp is pointing (null while walking or idle). */
+export type LocalSpirit = { player: Player; wisp: { x: number; y: number } | null };
+import { PLAYER_COLORS, castleModel, rockModel, spiritModel, towerModel, troopModel } from './models';
 
 export function createView(canvas: HTMLCanvasElement) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: false });
@@ -24,6 +27,8 @@ export function createView(canvas: HTMLCanvasElement) {
   const troops = new Map<number, { model: THREE.Group; bar: THREE.Mesh }>();
   let effects: { mesh: THREE.Mesh; age: number; life: number; update: (p: number) => void }[] = [];
   let size = { width: 1, height: 1 };
+  let spirits: { walk: THREE.Group; cursor: THREE.Group; reach: THREE.Mesh }[] = [];
+  const reachGeometry = new THREE.RingGeometry(0.95, 1, 48);
 
   const cursorGeometry = new THREE.PlaneGeometry(0.96, 0.96);
   const rangeGeometry = new THREE.RingGeometry(0.97, 1, 64);
@@ -104,6 +109,13 @@ export function createView(canvas: HTMLCanvasElement) {
       if (rock) { const r = rockModel(cell); place(r, cell); board.add(r); }
     });
     state.bases.forEach((cell, player) => { const c = castleModel(player); place(c, cell); board.add(c); });
+    spirits = state.spirits.map((sp, player) => {
+      const walk = spiritModel(sp.id, 'walk', player), cursor = spiritModel(sp.id, 'cursor', player);
+      const reach = new THREE.Mesh(reachGeometry, new THREE.MeshBasicMaterial({ color: PLAYER_COLORS[player], transparent: true, opacity: 0.5, depthWrite: false }));
+      reach.rotation.x = -Math.PI / 2;
+      board.add(walk, cursor, reach);
+      return { walk, cursor, reach };
+    });
     frame();
   }
 
@@ -141,8 +153,30 @@ export function createView(canvas: HTMLCanvasElement) {
     });
   }
 
-  function draw(state: State, cfg: Config, seconds: number, me: Player | null) {
+  /** Bodies walk where the state says. A wisp flies at its player's cursor here, and elsewhere at the last cell it built on. */
+  function drawSpirits(state: State, cfg: Config, locals: LocalSpirit[]) {
+    const now = performance.now();
+    state.spirits.forEach((sp, p) => {
+      const v = spirits[p];
+      if (!v) return;
+      const standing = alive(state, p);
+      const mine = locals.find((l) => l.player === p);
+      v.walk.visible = standing;
+      v.walk.position.set(worldX(sp.x / CELL), 0, worldZ(sp.y / CELL));
+      // In cursor mode the body rests, smaller, where it was left.
+      v.walk.scale.setScalar(sp.mode === 'walk' ? 1 : 0.65);
+      v.reach.visible = standing && !!mine && sp.mode === 'walk';
+      v.reach.position.set(v.walk.position.x, 0.05, v.walk.position.z);
+      v.reach.scale.setScalar(cfg.content.spirits[sp.id].reach / 1000);
+      v.cursor.visible = standing && sp.mode === 'cursor' && (!mine || !!mine.wisp);
+      const cell = mine?.wisp ?? { x: sp.wispCell % state.width, y: Math.floor(sp.wispCell / state.width) };
+      v.cursor.position.set(worldX(cell.x), Math.sin(now / 300 + p) * 0.08, worldZ(cell.y));
+    });
+  }
+
+  function draw(state: State, cfg: Config, seconds: number, me: Player | null, locals: LocalSpirit[] = []) {
     drawLand(state, cfg, me);
+    drawSpirits(state, cfg, locals);
     const liveTowers = new Set(state.towers.map((t) => t.uid));
     for (const [uid, v] of towers) if (!liveTowers.has(uid)) { board.remove(v.model); towers.delete(uid); }
     for (const t of state.towers) {
@@ -169,8 +203,9 @@ export function createView(canvas: HTMLCanvasElement) {
       v.model.position.set(worldX(p.x / CELL), Math.abs(Math.sin(performance.now() / 110 + t.uid)) * 0.05, worldZ(p.y / CELL));
       v.model.rotation.y = Math.atan2((t.to % state.width) - (t.from % state.width), Math.floor(t.to / state.width) - Math.floor(t.from / state.width));
       v.bar.rotation.y = -v.model.rotation.y;
-      v.bar.scale.x = t.hp / cfg.content.troops[t.id].health;
-      v.bar.visible = t.hp < cfg.content.troops[t.id].health;
+      const full = troopHealth(state, cfg, t.player, t.id);
+      v.bar.scale.x = Math.min(1, t.hp / full);
+      v.bar.visible = t.hp < full;
     }
     effects = effects.filter((e) => {
       e.age += seconds;
