@@ -4,10 +4,11 @@
  * match only as far as the room's server has confirmed, so every browser sees the same game.
  */
 import { createBot } from '../core/bot';
-import { type Mode, modes, withSpirits } from '../core/config';
+import { type Mode, modes } from '../core/config';
 import { Match, fingerprint } from '../core/match';
-import { CELL, TICKS_PER_SECOND, alive, checkBuild, defaultSpirits, enemies, players, withinReach } from '../core/sim';
-import type { Action, Config, GameEvent, Player, Refusal, SpiritMode, State } from '../core/types';
+import { CELL, TICKS_PER_SECOND, alive, checkBuild, defaultSpirits, enemies, players, withSpirits, withinReach } from '../core/sim';
+import spiritContent from '../../content/spirits.json';
+import type { Action, Config, GameEvent, Player, Refusal, SpiritDef, SpiritMode, State } from '../core/types';
 import { problems } from '../core/validate';
 import { Lockstep } from '../net/lockstep';
 import { MAX_NAME, type ServerMessage, TURN_TICKS } from '../net/protocol';
@@ -80,7 +81,7 @@ let seats: Seat[] = [];
 
 // Spirits. The match state is the truth; `spiritModes` is what this screen last asked for, so a quick
 // second press of Q flips back even before the server has confirmed the first.
-const spiritList = modes.duel.config.content.spirits;
+const spiritList = spiritContent as Record<string, SpiritDef>;
 let mySpirit = Object.keys(spiritList)[0];
 let localSpirits: string[] = [];
 let spiritModes: SpiritMode[] = [];
@@ -361,12 +362,17 @@ function toggleMode() {
   } else syncHeld();
 }
 
+/** The direction you are holding: the controller's, or else the keys'. */
+function heldNow(): Dir {
+  let x = padHeld.x, y = padHeld.y;
+  if (!x && !y) for (const key of keysDown) { x += WALK_KEYS[key].x; y += WALK_KEYS[key].y; }
+  return { x: Math.sign(x), y: Math.sign(y) };
+}
+
 /** Send your walking direction, only when it changes: a held key costs one action, not one per tick. */
 function syncHeld() {
   if (me < 0 || !walking() || paused || !alive(match.state, me)) return;
-  let x = padHeld.x, y = padHeld.y;
-  if (!x && !y) for (const key of keysDown) { x += WALK_KEYS[key].x; y += WALK_KEYS[key].y; }
-  const held = { x: Math.sign(x), y: Math.sign(y) };
+  const held = heldNow();
   if (held.x === sentHeld.x && held.y === sentHeld.y) return;
   sentHeld = held;
   act({ type: 'spirit-move', player: me, ...held });
@@ -813,6 +819,19 @@ function runOnline(seconds: number) {
     if (racing) { if (match.state.winner !== null) say(winText(match.state.winner), 1e6); }
     else react(result.events, wasAlive);
   }
+  if (racing && lock!.behind <= 3 * TURN_TICKS) caughtUp();
+}
+
+/**
+ * After racing through a backlog (a reconnect or a hidden tab), trust the match again for your spirit:
+ * its mode, and a stop if it is still walking a direction you no longer hold.
+ */
+function caughtUp() {
+  if (me < 0) return;
+  const sp = match.state.spirits[me];
+  spiritModes[me] = sp.mode;
+  sentHeld = { x: sp.dx, y: sp.dy };
+  if (sp.mode === 'walk') syncHeld();
 }
 
 function draw(now: number, seconds: number) {

@@ -22,6 +22,3 @@ export const modes = {
 
 export type Mode = keyof typeof modes;
 export const defaultConfig: Config = modes.duel.config;
-
-/** A mode's config with each player's chosen spirit. */
-export const withSpirits = (config: Config, spirits: string[]): Config => ({ ...config, spirits: [...spirits] });

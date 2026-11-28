@@ -3,7 +3,8 @@
  * applying each action on the tick the server stamped it with. No networking here, so tests can drive it.
  */
 import { createBot } from '../core/bot';
-import { modes, withSpirits } from '../core/config';
+import { modes } from '../core/config';
+import { withSpirits } from '../core/sim';
 import { Match, fingerprint } from '../core/match';
 import type { Action, GameEvent } from '../core/types';
 import { FINGERPRINT_EVERY, type ServerMessage, type Stamped } from './protocol';

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createBot } from '../src/core/bot';
-import { defaultConfig as cfg, modes, withSpirits } from '../src/core/config';
+import { defaultConfig as cfg, modes } from '../src/core/config';
 import { Match, fingerprint, runReplay } from '../src/core/match';
 import { blockedCells } from '../src/core/grid';
-import { CELL, checkBuild, createMatch, step, troopHealth, withinReach } from '../src/core/sim';
+import { CELL, checkBuild, createMatch, step, troopHealth, withSpirits, withinReach } from '../src/core/sim';
 import type { Action } from '../src/core/types';
 import { problems } from '../src/core/validate';
 

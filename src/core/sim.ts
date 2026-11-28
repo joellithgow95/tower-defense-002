@@ -29,6 +29,8 @@ export function castleCells(rows: string[]): number[] {
 /** Wisp, Mire, Wisp, Mire: so in 2 v 2 each team has one of each. */
 export const defaultSpirits = (count: number): string[] => Array.from({ length: count }, (_, p) => (p % 2 ? 'mire' : 'wisp'));
 /** Each player's spirit id: the config's choice, or the default. */
+/** A config with each player's chosen spirit. */
+export const withSpirits = (config: Config, spirits: string[]): Config => ({ ...config, spirits: [...spirits] });
 export const spiritIds = (cfg: Config): string[] => cfg.spirits ?? defaultSpirits(cfg.teams.length);
 export const spiritDef = (s: State, cfg: Config, p: Player): SpiritDef => cfg.content.spirits[s.spirits[p].id];
 

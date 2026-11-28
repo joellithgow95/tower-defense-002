@@ -162,7 +162,9 @@ export function createView(canvas: HTMLCanvasElement) {
       const standing = alive(state, p);
       const mine = locals.find((l) => l.player === p);
       v.walk.visible = standing;
-      v.walk.position.set(worldX(sp.x / CELL), 0, worldZ(sp.y / CELL));
+      // On its own castle the body would hide inside it, so it stands on the roof.
+      const base = state.bases[p], onCastle = Math.abs(sp.x - (base % state.width) * CELL) < CELL / 2 && Math.abs(sp.y - Math.floor(base / state.width) * CELL) < CELL / 2;
+      v.walk.position.set(worldX(sp.x / CELL), onCastle ? 0.7 : 0, worldZ(sp.y / CELL));
       // In cursor mode the body rests, smaller, where it was left.
       v.walk.scale.setScalar(sp.mode === 'walk' ? 1 : 0.65);
       v.reach.visible = standing && !!mine && sp.mode === 'walk';
