@@ -2,7 +2,7 @@
 
 A low-poly fantasy **maze tower defense**, built with TypeScript and Three.js. The working name is temporary.
 
-Two sides share a board. Your towers are also walls: enemy troops walk around them. Shooting towers stop troops, and spawner buildings send your own troops at the enemy castle. You can bend the route, but never seal it.
+Two to four players share a board, one against one, free-for-all or in teams. Your towers are also walls: enemy troops walk around them. Shooting towers stop troops; barracks train troops into your castle, and you launch them at the enemy castle of your choice. You can bend the routes, but never seal them.
 
 ## Play it on your computer
 
@@ -29,7 +29,7 @@ Start with [your first change](docs/first-change.md). You don't need to know how
 |---|---|
 | `npm run dev` | Play while editing; the page updates as you save |
 | `npm run check` | All tests, type check and a production build |
-| `npm run sim -- 20` | 20 bot-against-bot matches with no graphics |
+| `npm run sim -- 20` | 20 bot-against-bot matches with no graphics (`npm run sim -- 20 ffa` for another mode in `src/core/config.ts`) |
 | `npm run replay -- report.json` | Re-run a bug report |
 
 ## Where things are
