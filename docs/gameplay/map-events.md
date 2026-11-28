@@ -141,8 +141,8 @@ Joel's favourite verb isn't in the sketch yet. One way to add it:
 
 An alternative or addition is **a lantern** that clears mist around whoever carries it. It's a softer object to fight over, and it fits the "lanterns in the mist" material culture in [Drowned Woods](../worldbuilding/locations/drowned-woods.md).
 
-### Unresolved: does water slow, or block?
-[`design.md`](../design.md) lists "water (slows)" as wanted terrain. This design has both slow shallows and impassable deep water. Joel hasn't chosen, so both are recorded here, and design.md is unchanged.
+### Water: deep blocks, shallows slow
+Joel decided on 2026-11-28: deep water blocks troops and shallows slow them. [`design.md`](../design.md) now says so.
 
 ### What building it would take
 Most of this changes `src/core/` and the replay format:

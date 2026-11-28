@@ -18,7 +18,7 @@ updated: 2026-11-27
 ## Wanted later
 - Multiplayer, daily puzzles scored by moves ("strokes" and par), and a campaign with dialogue
 - Whimsical fantasy tribes: Kingdom, Goblins, Elves, Wizards; later Dwarves, Undead, a frog tribe
-- Terrain: swamp (slows, takes more damage), water (slows), forest (cover), mountains
+- Terrain: swamp (slows, takes more damage), shallow water (slows), deep water (blocks troops), forest (cover), mountains. Joel decided the water split on 2026-11-28
 - Card and deck modes, turn-based mode
 - A headless simulator for balance, bots and ML training
 - A smaller-board mode for phones
