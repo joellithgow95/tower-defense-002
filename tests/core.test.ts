@@ -8,6 +8,10 @@ import { problems } from '../src/core/validate';
 const quiet = { ...cfg, map: { ...cfg.map, startingTowers: [] } };
 const corridor = { ...cfg, rules: { ...cfg.rules, castleNoBuildRadius: 0 }, map: { name: 'corridor', startingTowers: [], rows: ['######', '1....2', '######'] } };
 
+/** Spirits start walking on their castle. Building needs the wisp: fly first, in the same tick. */
+const fly = (player = 0) => ({ type: 'spirit-mode' as const, player, mode: 'cursor' as const });
+const walk = (player = 0) => ({ type: 'spirit-mode' as const, player, mode: 'walk' as const });
+
 function botMatch(ticks: number) {
   const match = new Match(cfg);
   const bots = [createBot(0, 7), createBot(1, 8)];
@@ -34,7 +38,7 @@ describe('content', () => {
 describe('building', () => {
   it('charges gold', () => {
     const s = createMatch(quiet);
-    step(s, quiet, [{ type: 'build', player: 0, tower: 'archer', x: 1, y: 4 }]);
+    step(s, quiet, [fly(), { type: 'build', player: 0, tower: 'archer', x: 1, y: 4 }]);
     expect(s.towers).toHaveLength(1);
     expect(s.gold[0]).toBe(40);
   });
@@ -42,7 +46,7 @@ describe('building', () => {
     const s = createMatch(quiet);
     const at = (x: number, y: number) => y * s.width + x;
     s.troops.push({ uid: 999, id: 'soldier', player: 1, target: 0, hp: 10, from: at(3, 5), to: at(2, 5), progress: CELL / 2 });
-    step(s, quiet, [{ type: 'build', player: 0, tower: 'archer', x: 2, y: 5 }]);
+    step(s, quiet, [fly(), { type: 'build', player: 0, tower: 'archer', x: 2, y: 5 }]);
     expect(s.towers).toHaveLength(1);
     for (let i = 0; i < 120; i++) {
       step(s, quiet);
@@ -62,8 +66,9 @@ describe('building', () => {
   });
   it('refunds after the demolish delay', () => {
     const s = createMatch(quiet);
-    step(s, quiet, [{ type: 'build', player: 0, tower: 'archer', x: 1, y: 4 }]);
-    step(s, quiet, [{ type: 'sell', player: 0, x: 1, y: 4 }]);
+    step(s, quiet, [fly(), { type: 'build', player: 0, tower: 'archer', x: 1, y: 4 }]);
+    // The spirit's body is still on the castle at x 0, y 5: the tower is one diagonal step away, within the Wisp's reach.
+    step(s, quiet, [walk(), { type: 'sell', player: 0, x: 1, y: 4 }]);
     const before = s.gold[0];
     for (let i = 0; i < quiet.rules.demolishTicks; i++) step(s, quiet);
     expect(s.towers).toHaveLength(0);
@@ -82,19 +87,21 @@ describe('land', () => {
   });
   it('spreads from each building you add', () => {
     const s = createMatch(rich);
-    step(s, rich, [{ type: 'build', player: 0, tower: 'archer', x: 3, y: 5 }]);
+    step(s, rich, [fly(), { type: 'build', player: 0, tower: 'archer', x: 3, y: 5 }]);
     expect(checkBuild(s, rich, 0, 'archer', 6, 5)).toBeNull();
     expect(checkBuild(s, rich, 1, 'archer', 6, 5)).toBe('not-your-land');
   });
   it('stops spreading from a building once it is being sold', () => {
     const s = createMatch(rich);
-    step(s, rich, [{ type: 'build', player: 0, tower: 'archer', x: 3, y: 5 }]);
-    step(s, rich, [{ type: 'sell', player: 0, x: 3, y: 5 }]);
+    step(s, rich, [fly(), { type: 'build', player: 0, tower: 'archer', x: 3, y: 5 }]);
+    s.spirits[0].x = 2 * CELL;
+    step(s, rich, [walk(), { type: 'sell', player: 0, x: 3, y: 5 }]);
+    expect(s.towers[0].demolish).toBeGreaterThan(0);
     expect(checkBuild(s, rich, 0, 'archer', 6, 5)).toBe('not-your-land');
   });
   it('can reach across the board, but not into the ring round the enemy castle', () => {
     const s = createMatch(rich);
-    for (let x = 3; x <= 15; x += 3) step(s, rich, [{ type: 'build', player: 0, tower: 'archer', x, y: 5 }]);
+    for (let x = 3; x <= 15; x += 3) step(s, rich, [fly(), { type: 'build', player: 0, tower: 'archer', x, y: 5 }]);
     expect(s.towers).toHaveLength(5);
     expect(checkBuild(s, rich, 0, 'archer', 17, 2)).toBeNull();
     expect(checkBuild(s, rich, 0, 'archer', 18, 3)).toBe('near-enemy-castle');
@@ -122,7 +129,7 @@ describe('armies', () => {
     train(s, 240 * 8);
     expect(s.garrison[0].soldier).toBe(5);
     s.gold[0] = 1000;
-    step(s, cfg, [{ type: 'build', player: 0, tower: 'barracks', x: 1, y: 2 }]);
+    step(s, cfg, [fly(), { type: 'build', player: 0, tower: 'barracks', x: 1, y: 2 }]);
     train(s, 240 * 6);
     expect(s.garrison[0].soldier).toBe(10);
   });

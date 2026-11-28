@@ -93,6 +93,11 @@ const reasons = (): Record<Refusal, string> => ({
   'nothing-to-sell': 'Point at one of your towers to sell it.',
   'empty-garrison': 'Your castle has no troops yet. Build a Barracks or Knight Hall to train some.',
   'bad-target': 'You can only attack an enemy castle that is still standing.',
+  'not-in-kit': 'Your spirit\'s followers can\'t build that.',
+  'needs-cursor': 'Fly as the wisp to build (Q).',
+  'needs-walk': 'Walk to do that (Q).',
+  'out-of-reach': 'Walk closer: that is out of your spirit\'s reach.',
+  'bad-move': 'That move is not allowed.',
 });
 
 function say(text: string, seconds = 2.5) {

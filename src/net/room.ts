@@ -3,6 +3,7 @@
  * and tests drive it directly. It never runs the game; it only orders actions and keeps the turn clock.
  */
 import { type Mode, modes } from '../core/config';
+import { defaultSpirits } from '../core/sim';
 import type { Action } from '../core/types';
 import { type ClientMessage, MAX_NAME, type ServerMessage, type Stamped, TURN_TICKS } from './protocol';
 
@@ -17,6 +18,8 @@ export class RoomCore {
   mode: Mode = 'duel';
   /** seats[p] is the client id sitting as player p, or null for a bot. */
   seats: (string | null)[] = [null, null];
+  /** spirits[p] is seat p's spirit, kept when someone stands up so a bot plays it. */
+  spirits: string[] = defaultSpirits(2);
   people = new Map<string, Person>();
   build: string | null = null;
   host: string | null = null;
@@ -87,6 +90,12 @@ export class RoomCore {
       const size = modes[m.mode].config.teams.length;
       const sitting = this.seats.filter((s) => s !== null);
       this.seats = Array.from({ length: size }, (_, i) => sitting[i] ?? null);
+      this.spirits = this.seatSpirits();
+      this.broadcastRoom();
+    } else if (m.t === 'spirit' && this.phase === 'lobby') {
+      const seat = this.seats.indexOf(client);
+      if (seat < 0 || typeof m.spirit !== 'string' || !(m.spirit in modes[this.mode].config.content.spirits)) return;
+      this.spirits[seat] = m.spirit;
       this.broadcastRoom();
     } else if (m.t === 'start' && isHost && this.phase === 'lobby') {
       this.startMatch();
@@ -138,17 +147,21 @@ export class RoomCore {
   }
 
   private startMessage(): ServerMessage {
-    return { t: 'start', mode: this.mode, seed: this.seed, humans: this.humans, actions: this.actions.filter((a) => a.tick < this.upTo), upTo: this.upTo };
+    return { t: 'start', mode: this.mode, seed: this.seed, humans: this.humans, spirits: this.seatSpirits(), actions: this.actions.filter((a) => a.tick < this.upTo), upTo: this.upTo };
   }
+
+  /** One spirit per seat: the one chosen for it, or the default. */
+  private seatSpirits() { return defaultSpirits(this.seats.length).map((id, i) => this.spirits[i] ?? id); }
 
   private anyoneOnline() { return [...this.people.values()].some((p) => p.online); }
 
   private broadcast(m: ServerMessage) { for (const p of this.people.values()) if (p.online) p.send(m); }
 
   private broadcastRoom() {
-    const seats = this.seats.map((id) => {
+    const spirits = this.seatSpirits();
+    const seats = this.seats.map((id, i) => {
       const p = id ? this.people.get(id) : undefined;
-      return { name: p?.name ?? null, online: !!p?.online };
+      return { name: p?.name ?? null, online: !!p?.online, spirit: spirits[i] };
     });
     const watching = [...this.people.entries()].filter(([id, p]) => p.online && !this.seats.includes(id)).map(([, p]) => p.name);
     for (const [id, p] of this.people) {
@@ -174,6 +187,13 @@ function cleanAction(a: Action, player: number): Action | null {
   if (a.type === 'launch') {
     const target = int(a.target);
     return target === null ? null : { type: 'launch', player, target };
+  }
+  if (a.type === 'spirit-move') {
+    const x = int(a.x), y = int(a.y);
+    return x === null || y === null ? null : { type: 'spirit-move', player, x: Math.sign(x), y: Math.sign(y) };
+  }
+  if (a.type === 'spirit-mode') {
+    return a.mode === 'walk' || a.mode === 'cursor' ? { type: 'spirit-mode', player, mode: a.mode } : null;
   }
   return null;
 }

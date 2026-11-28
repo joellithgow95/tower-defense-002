@@ -1,8 +1,9 @@
 /** Plain-English checks for the files in content/, so a typo says what to fix. */
-import { MAX_PLAYERS, castleCells } from './sim';
+import { MAX_PLAYERS, castleCells, spiritIds } from './sim';
 import type { Config } from './types';
 
-export function problems({ content, map, rules, teams }: Config): string[] {
+export function problems(config: Config): string[] {
+  const { content, map, rules, teams } = config;
   const out: string[] = [];
   const whole = (where: string, obj: object, keys: string[]) => {
     for (const k of keys) {
@@ -25,6 +26,19 @@ export function problems({ content, map, rules, teams }: Config): string[] {
       if (!content.troops[t.troop]) out.push(`${where}: there is no troop called "${t.troop}" in content/troops.json.`);
     } else out.push(`${where}: "kind" must be "shooter" or "spawner".`);
   }
+  for (const [id, sp] of Object.entries(content.spirits)) {
+    const where = `content/spirits.json → ${id}`;
+    if (!sp.label) out.push(`${where}: give it a "label", the name players see.`);
+    if (!sp.passive) out.push(`${where}: describe its passive in "passive", in words players see.`);
+    whole(where, sp, ['walkSpeed', 'reach']);
+    if (sp.walkSpeed >= 60000) out.push(`${where}: "walkSpeed" is too fast; keep it under 60000.`);
+    if (!Array.isArray(sp.kit) || !sp.kit.length) out.push(`${where}: "kit" must list at least one tower it can build, e.g. ["archer"].`);
+    else for (const tower of sp.kit) if (!content.towers[tower]) out.push(`${where}: its kit lists "${tower}", but there is no tower called that in content/towers.json.`);
+    for (const k of ['troopSpeedPercent', 'troopHealthPercent'] as const) {
+      const v = sp[k];
+      if (v !== undefined && (!Number.isInteger(v) || v < 50 || v > 200)) out.push(`${where}: "${k}" must be a whole number from 50 to 200 (it is ${JSON.stringify(v)}). Leave it out for 100.`);
+    }
+  }
   whole('content/rules.json', rules, ['startingGold', 'goldPerIncome', 'incomeTicks', 'baseHealth', 'refundPercent', 'demolishTicks', 'buildRadius', 'launchGapTicks']);
   if (!Number.isInteger(rules.castleNoBuildRadius) || rules.castleNoBuildRadius < 0) {
     out.push(`content/rules.json: "castleNoBuildRadius" must be a whole number, 0 or more (it is ${JSON.stringify(rules.castleNoBuildRadius)}). Use 0 to turn it off.`);
@@ -44,6 +58,9 @@ export function problems({ content, map, rules, teams }: Config): string[] {
     if (digit > castles && count) out.push(`${where}: castle "${digit}" needs castles 1 to ${digit - 1} too.`);
   }
   if (teams.length !== castles) out.push(`${where} has ${castles} castles, but this game mode has ${teams.length} players.`);
+  const chosen = spiritIds(config);
+  if (chosen.length !== teams.length) out.push(`This game mode has ${teams.length} players but ${chosen.length} spirits; give each player one.`);
+  for (const id of chosen) if (!content.spirits[id]) out.push(`There is no spirit called "${id}" in content/spirits.json.`);
   if (new Set(teams).size < 2) out.push(`${where}: a game needs at least two teams.`);
   for (const t of map.startingTowers) {
     if (!(t.player >= 0 && t.player < castles)) out.push(`${where}: a starting ${t.id} belongs to player ${t.player}, who has no castle.`);
