@@ -4,28 +4,29 @@
  * match only as far as the room's server has confirmed, so every browser sees the same game.
  */
 import { createBot } from '../core/bot';
-import { type Mode, modes } from '../core/config';
+import { content, isMode, modes } from '../core/config';
+import { type Choice, configFor, contentProblems, defaultChoice, mapFor, supports } from '../core/maps';
 import { Match, fingerprint } from '../core/match';
 import { TICKS_PER_SECOND, alive, checkBuild, enemies, players } from '../core/sim';
 import type { Action, Config, GameEvent, Player, Refusal, State } from '../core/types';
-import { problems } from '../core/validate';
 import { Lockstep } from '../net/lockstep';
 import { MAX_NAME, type ServerMessage, TURN_TICKS } from '../net/protocol';
 import { BUTTON_LABELS, SELECT_BUTTON, SETTINGS_BUTTON, defaults, loadPreferences, type ControllerPreferences } from './controller-preferences';
 import { createControllerSettings } from './controller-settings';
 import { createSingleGamepadInput } from './gamepad';
 import { createLocalControllers } from './local-controllers';
+import { fillMapPicker, showChoice } from './map-picker';
 import { PLAYER_COLORS } from './models';
 import { ROOM_CODE, connect, newRoomCode } from './online';
 import { createView } from './view';
 
 const $ = (id: string) => document.getElementById(id)!;
 const canvas = $('board') as HTMLCanvasElement;
-for (const [id, mode] of Object.entries(modes)) {
-  const mistakes = problems(mode.config);
+{
+  const mistakes = contentProblems();
   if (mistakes.length) {
     $('message').textContent = mistakes.join(' ');
-    throw new Error(`${id}: ${mistakes.join('\n')}`);
+    throw new Error(mistakes.join('\n'));
   }
 }
 
@@ -61,11 +62,11 @@ const roomCode = roomParam && ROOM_CODE.test(roomParam) ? roomParam : null;
 
 /** Which player you are: always 0 offline; online, your seat, or -1 while watching. */
 let me: Player = 0;
-let mode: Mode = 'duel', config: Config = modes.duel.config;
+let choice: Choice = defaultChoice, config: Config = configFor(choice);
 let match: Match = new Match(config);
 let bots: ((s: State, cfg: Config) => Action[])[] = [], paused = false, queued: Action[] = [];
 let target: Player = -1;
-let selected = Object.keys(modes.duel.config.content.towers)[0];
+let selected = Object.keys(content.towers)[0];
 type Cell = { x: number; y: number };
 let hover: Cell | null = null;
 let messageUntil = 0;
@@ -161,22 +162,23 @@ function show(next: Match, nextConfig: Config) {
   buildBadges();
 }
 
-function restart(next: Mode = mode) {
+function restart(next: Choice = choice) {
   if (room) {
     if (room.host && room.phase === 'playing') net!.send({ t: 'lobby' });
     else if (room.phase === 'playing') say('Only the host can end the match.');
     return;
   }
-  mode = next;
+  choice = next;
   const seed = Date.now();
-  show(new Match(modes[mode].config), modes[mode].config);
+  const nextConfig = configFor(choice);
+  show(new Match(nextConfig), nextConfig);
   bots = players(match.state).map((p) => createBot(p, seed + p));
   queued = [];
   owed = 0;
   paused = false;
-  ($('mode') as HTMLSelectElement).value = mode;
+  showChoice($('mode') as HTMLSelectElement, choice);
   if (local) { say(''); return; }
-  try { localStorage.setItem('mode', mode); } catch { /* private window: just don't remember */ }
+  try { localStorage.setItem('map', choice.map); localStorage.setItem('mode', choice.mode); } catch { /* private window: just don't remember */ }
   const aim = foes(match.state).length > 1 ? ' Click an enemy castle (or press T) to pick who to attack.' : '';
   say(`Build on your land (blue): towers are walls, Barracks and Knight Halls train troops. Press Space to launch them.${aim}`, 8);
 }
@@ -188,7 +190,7 @@ function act(action: Action) {
   else queued.push(action);
 }
 
-const cards = Object.entries(modes.duel.config.content.towers).map(([id, def], i) => {
+const cards = Object.entries(content.towers).map(([id, def], i) => {
   const button = document.createElement('button');
   const key = Object.assign(document.createElement('kbd'), { textContent: String(i + 1) });
   const cost = Object.assign(document.createElement('small'), { textContent: `${def.cost} gold` });
@@ -199,17 +201,15 @@ const cards = Object.entries(modes.duel.config.content.towers).map(([id, def], i
 });
 
 const modeSelect = $('mode') as HTMLSelectElement;
-for (const [id, m] of Object.entries(modes)) modeSelect.append(new Option(m.label, id));
-modeSelect.onchange = () => {
-  const next = modeSelect.value as Mode;
+fillMapPicker(modeSelect, (next) => {
   if (local) enterLobby(next);
   else restart(next);
   modeSelect.blur();
-};
+});
 
-function enterLobby(next: Mode) {
+function enterLobby(next: Choice) {
   joining = true;
-  controllers.reset(modes[next].config.teams.length);
+  controllers.reset(modes[next.mode].teams.length);
   controllerActive = false;
   hover = null;
   restart(next);
@@ -233,7 +233,7 @@ $('local').onclick = () => {
   $('controller-open').textContent = local ? 'Player 1 controller settings' : 'Controller settings';
   for (const id of ['cards', 'launch', 'sell']) $(id).hidden = local;
   $('local').textContent = local ? 'Solo play' : 'Local multiplayer';
-  if (local) enterLobby('fourWay');
+  if (local) enterLobby({ map: mapFor('fourWay'), mode: 'fourWay' });
   else {
     joining = false;
     controllers.reset(0);
@@ -489,7 +489,7 @@ function drawLobby() {
   lobby.hidden = room.phase !== 'lobby';
   $('room-code').textContent = roomCode!;
   const roomMode = $('room-mode') as HTMLSelectElement;
-  roomMode.value = room.mode;
+  showChoice(roomMode, room);
   roomMode.disabled = !room.host;
   ($('start') as HTMLButtonElement).hidden = !room.host;
   $('lobby-note').textContent = room.host ? 'Empty seats are played by bots.' : 'Waiting for the host to start. Empty seats are played by bots.';
@@ -498,7 +498,7 @@ function drawLobby() {
   room.seats.forEach((seat, p) => {
     const li = document.createElement('li');
     li.style.borderColor = colorOf(p);
-    const teamOf = modes[room!.mode].config.teams[p];
+    const teamOf = modes[room!.mode].teams[p];
     li.append(Object.assign(document.createElement('b'), { textContent: seat.name ?? 'Bot' }), ` · team ${teamOf + 1}${seat.name && !seat.online ? ' · away' : ''}`);
     if (p === room!.you) li.append(button('Stand up', () => net!.send({ t: 'sit', seat: null })));
     else if (!seat.name) li.append(button('Sit here', () => net!.send({ t: 'sit', seat: p })));
@@ -510,14 +510,15 @@ const button = (text: string, onclick: () => void) => Object.assign(document.cre
 
 function onServer(m: ServerMessage) {
   if (m.t === 'room') {
-    const lobbyChanged = !room || room.mode !== m.mode || room.phase !== m.phase;
+    const lobbyChanged = !room || room.map !== m.map || room.mode !== m.mode || room.phase !== m.phase;
     room = m;
     me = m.you ?? -1;
-    if (m.phase === 'lobby' && lobbyChanged) { lock = null; show(new Match(modes[m.mode].config), modes[m.mode].config); }
+    if (m.phase === 'lobby' && lobbyChanged && supports(m.map, m.mode)) { lock = null; const next = configFor(m); show(new Match(next), next); }
     else buildBadges();
     drawLobby();
   } else if (m.t === 'start') {
-    lock = new Lockstep(m);
+    if (!supports(m.map, m.mode)) { say(`This room plays a map this version of the game doesn't have (${m.map}). Refresh the page to update.`, 1e6); return; }
+    lock = new Lockstep(m, configFor(m));
     show(lock.match, lock.config);
     say(me >= 0 ? 'Go! Space launches your troops; click an enemy castle (or press T) to aim.' : 'You are watching this match.', 6);
   } else if (m.t === 'turn') {
@@ -541,11 +542,7 @@ if (roomCode) {
     try { localStorage.setItem('name', nameInput.value); } catch { /* no storage */ }
     net!.send({ t: 'name', name: nameInput.value });
   };
-  const roomMode = $('room-mode') as HTMLSelectElement;
-  for (const [id, m] of Object.entries(modes)) {
-    if (id !== 'fourWay' && id !== 'twoVsTwo') roomMode.append(new Option(m.label, id));
-  }
-  roomMode.onchange = () => net!.send({ t: 'mode', mode: roomMode.value as Mode });
+  fillMapPicker($('room-mode') as HTMLSelectElement, ({ map, mode }) => net!.send({ t: 'setup', map, mode }));
   $('start').onclick = () => net!.send({ t: 'start' });
   $('copy-link').onclick = async () => {
     try { await navigator.clipboard.writeText(location.href); say('Link copied. Send it to your friends.'); }
@@ -560,7 +557,12 @@ if (roomCode) {
   me = -1;
   show(match, config);
 } else {
-  try { const saved = localStorage.getItem('mode'); if (saved && saved in modes) mode = saved as Mode; } catch { /* use the default */ }
+  try {
+    // Remember the last map and mode. Older versions saved only the mode, so find a map for it.
+    const map = localStorage.getItem('map'), mode = localStorage.getItem('mode');
+    if (map && mode && supports(map, mode)) choice = { map, mode };
+    else if (isMode(mode)) choice = { map: mapFor(mode), mode };
+  } catch { /* use the default */ }
   restart();
 }
 

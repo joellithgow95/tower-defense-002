@@ -35,7 +35,7 @@ Start with [your first change](docs/first-change.md). You don't need to know how
 |---|---|
 | `npm run dev` | Play while editing; the page updates as you save |
 | `npm run check` | All tests, type check and a production build |
-| `npm run sim -- 20` | 20 bot-against-bot matches with no graphics (`npm run sim -- 20 ffa` for another mode in `src/core/config.ts`) |
+| `npm run sim -- 20` | 20 bot-against-bot matches with no graphics (`-- 20 ffa` for another mode, `-- --map three-crowns` for one map, `-- --map all` for every map) |
 | `npm run replay -- report.json` | Re-run a bug report |
 | `npm run online` | Build, then run the online server (Cloudflare's `wrangler dev`) on your computer |
 

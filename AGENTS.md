@@ -19,7 +19,7 @@ this repo: other contributors can't load them.
 | `tests/` | Vitest tests |
 | `src/net/` | Online play with no networking code: the message protocol, the room rules (`room.ts`) and lockstep (`lockstep.ts`). Same strict rules as `src/core/`, so tests can run it |
 | `worker/` | The Cloudflare Worker and Durable Object that host rooms; it only moves messages between browsers and `src/net/room.ts`. Deployed by `.github/workflows/deploy.yml` on merge to `main`; the hostname lives in `joellithgow95/jlithgow-ops` |
-| `scripts/` | Headless bot matches (`npm run sim`) and bug report replay (`npm run replay`) |
+| `scripts/` | Headless bot matches (`npm run sim`, `-- --map all` for every map) and bug report replay (`npm run replay`) |
 | `docs/` | Plan, game design, creative vision, worldbuilding and decisions. Read [`docs/AGENTS.md`](docs/AGENTS.md) before editing there |
 | `.github/` | Issue forms, the PR template, and the `Check` workflow that runs `npm run check` on every PR |
 
@@ -37,7 +37,7 @@ this repo: other contributors can't load them.
 
 - **Never commit or push to `main`.** Every change goes through a PR so a second person sees it first.
 - **Never put passwords, tokens or keys in code, commits, issues or chat.** The repo is public: anyone can read it, history included.
-- **Never change a content id** such as `archer`. Replays and bug reports refer to it; change `label` to rename something.
+- **Never change a content id** such as `archer` or a map's file name. Replays and bug reports refer to it; change `label` to rename something.
 - **Never treat proposed lore as a game rule.** Worldbuilding is exploration until a decision is accepted; see [`docs/AGENTS.md`](docs/AGENTS.md).
 
 ## Rules for `src/core/`
@@ -54,7 +54,8 @@ Multiplayer, replays, puzzles, bots and training all rely on these.
 
 - `speed` is thousandths of a cell per second; `range` is thousandths of a cell; `...Ticks` are 60ths of a second.
 - A new tower or troop works with a placeholder block until it gets a model in `src/game/models.ts`.
-- Board size comes from the map file, so smaller boards need no code change. Player 0's castle is `1` in the map file, player 1's is `2`, and so on; game modes in `src/core/config.ts` say which players are on which team. Where each player may build comes from `buildRadius` and `castleNoBuildRadius` in `content/rules.json`, not from the map.
+- A new map is a new file in `content/maps/`: the game finds it by itself, and its file name is its id. It lists the game `modes` it supports; the modes in `src/core/config.ts` say which players are on which team. See [`docs/gameplay/maps.md`](docs/gameplay/maps.md).
+- Board size comes from the map file, so smaller boards need no code change. Player 0's castle is `1` in the map file, player 1's is `2`, and so on. Where each player may build comes from `buildRadius` and `castleNoBuildRadius` in `content/rules.json`, not from the map.
 
 ## Art
 

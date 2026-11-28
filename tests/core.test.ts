@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createBot } from '../src/core/bot';
-import { defaultConfig as cfg, modes } from '../src/core/config';
+import { readdirSync } from 'node:fs';
+import { matchConfig, modes } from '../src/core/config';
+import { defaultConfig as cfg, choices, configFor, contentProblems, mapIds, maps } from '../src/core/maps';
 import { Match, fingerprint, observe, runReplay } from '../src/core/match';
 import { CELL, adjacent, checkBuild, createMatch, step } from '../src/core/sim';
-import { problems } from '../src/core/validate';
+import { mapProblems, problems } from '../src/core/validate';
 
 const quiet = { ...cfg, map: { ...cfg.map, startingTowers: [] } };
 const corridor = { ...cfg, rules: { ...cfg.rules, castleNoBuildRadius: 0 }, map: { name: 'corridor', startingTowers: [], rows: ['######', '1....2', '######'] } };
@@ -23,11 +25,61 @@ function botMatch(ticks: number) {
 }
 
 describe('content', () => {
-  it('has no mistakes', () => expect(problems(cfg)).toEqual([]));
+  it('has no mistakes', () => expect(contentProblems()).toEqual([]));
   it('explains a mistake in plain English', () => {
     const bad = structuredClone(cfg);
     bad.content.troops.soldier.health = -1;
     expect(problems(bad)[0]).toContain('"health" must be a whole number above 0');
+  });
+});
+
+describe('maps', () => {
+  it('finds every file in content/maps/ by itself', () => {
+    const files = readdirSync('content/maps').filter((f) => f.endsWith('.json')).map((f) => f.replace(/\.json$/, ''));
+    expect([...mapIds].sort()).toEqual(files.sort());
+    for (const id of mapIds) expect(maps[id].id).toBe(id);
+  });
+  it('keeps the maps that are already played, under the same ids', () => {
+    expect(mapIds).toEqual(expect.arrayContaining(['rocky-pass', 'three-crowns', 'four-crossroads']));
+  });
+  it('can play every mode on some map', () => {
+    for (const mode of Object.keys(modes)) expect(choices.some((c) => c.mode === mode)).toBe(true);
+  });
+  it('lists maps from fewest players to most', () => {
+    const players = mapIds.map((id) => configFor(choices.find((c) => c.map === id)!).teams.length);
+    expect(players).toEqual([...players].sort((a, b) => a - b));
+  });
+  it('explains a map file with missing or wrong details', () => {
+    const map = { ...maps['three-crowns'], id: 'Drowned Woods', description: '', modes: ['duel', 'swim'] };
+    const said = mapProblems(map).join(' ');
+    expect(said).toContain('lowercase letters, numbers and dashes');
+    expect(said).toContain('give it a "description"');
+    expect(said).toContain('"duel" (1 v 1) needs 2 castles, but this map has 3');
+    expect(said).toContain('there is no game mode called "swim"');
+    expect(mapProblems({ ...maps['rocky-pass'], modes: undefined }).join(' ')).toContain('list the game modes it can be played as in "modes"');
+  });
+  it('refuses a map and mode that do not go together', () => {
+    expect(() => configFor({ map: 'rocky-pass', mode: 'ffa' })).toThrow('content/maps/rocky-pass.json');
+    expect(() => configFor({ map: 'drowned-woods', mode: 'duel' })).toThrow('no map called "drowned-woods"');
+  });
+  it('names the map file in a mistake about its rows', () => {
+    const bad = matchConfig({ ...maps['rocky-pass'], rows: ['1..', '..2', '.'] }, 'duel');
+    expect(problems(bad)).toContain('content/maps/rocky-pass.json: every row must be the same length.');
+  });
+});
+
+describe('bug reports', () => {
+  it('still replays a report made before maps had ids', async () => {
+    const { default: old } = await import('./fixtures/report-v2-three-crowns.json');
+    expect('id' in old.config.map).toBe(false);
+    expect(fingerprint(runReplay(old as unknown as Parameters<typeof runReplay>[0]))).toBe(old.fingerprint);
+  });
+  it('records which map was played', () => {
+    const match = new Match(configFor({ map: 'four-crossroads', mode: 'fourWay' }));
+    match.step();
+    const replay = JSON.parse(JSON.stringify(match.replay()));
+    expect(replay.config.map.id).toBe('four-crossroads');
+    expect(fingerprint(runReplay(replay))).toBe(fingerprint(match.state));
   });
 });
 
@@ -149,10 +201,10 @@ describe('armies', () => {
 
 describe('more than two players', () => {
   // Three Crowns: player 0's castle is at x 2, y 13, player 1's at x 20, y 13, player 2's at x 11, y 1.
-  const ffa = modes.ffa.config, twoVsOne = modes.twoVsOne.config;
+  const ffa = configFor({ map: 'three-crowns', mode: 'ffa' }), twoVsOne = configFor({ map: 'three-crowns', mode: 'twoVsOne' });
   const at = (s: ReturnType<typeof createMatch>, x: number, y: number) => y * s.width + x;
-  it('has every mode set up correctly', () => {
-    for (const mode of Object.values(modes)) expect(problems(mode.config)).toEqual([]);
+  it('has every map and mode set up correctly', () => {
+    for (const choice of choices) expect(problems(configFor(choice))).toEqual([]);
   });
   it('lets you launch at an enemy, but not at an ally', () => {
     const s = createMatch(twoVsOne);
@@ -174,7 +226,7 @@ describe('more than two players', () => {
     expect(hpAfterAMoment(2)).toBeLessThan(30);
   });
   it('explains a map with too many castles', () => {
-    const big = { ...modes.duel.config, teams: [0, 1, 2, 3, 4], map: { name: 'big', startingTowers: [], rows: ['1.2.3.4.5'] } };
+    const big = { ...cfg, teams: [0, 1, 2, 3, 4], map: { name: 'big', startingTowers: [], rows: ['1.2.3.4.5'] } };
     expect(problems(big).join(' ')).toContain('the most a map may have is 4');
   });
   it('keeps every castle connected to every enemy castle', () => {

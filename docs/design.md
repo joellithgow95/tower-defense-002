@@ -18,14 +18,14 @@ updated: 2026-11-27
 ## Wanted later
 - Multiplayer, daily puzzles scored by moves ("strokes" and par), and a campaign with dialogue
 - Whimsical fantasy tribes: Kingdom, Goblins, Elves, Wizards; later Dwarves, Undead, a frog tribe
-- Terrain: swamp (slows, takes more damage), water (slows), forest (cover), mountains
+- Terrain: swamp (slows, takes more damage), shallow water (slows), deep water (blocks troops), forest (cover), mountains. Joel decided the water split on 2026-11-28
 - Card and deck modes, turn-based mode
 - A headless simulator for balance, bots and ML training
 - A smaller-board mode for phones
 
 ## Players and teams
 - Two to four players (`MAX_PLAYERS` in `src/core/sim.ts`). Each has their own castle, gold, land and buildings.
-- Every player is on a team, set by the game mode in `src/core/config.ts`: `[0, 1, 2]` is a free-for-all, `[0, 0, 1]` is two against one. Allies never shoot each other's troops and can't attack each other.
+- Every player is on a team, set by the game mode in `src/core/config.ts` (each map lists the modes it supports; see [maps](gameplay/maps.md)): `[0, 1, 2]` is a free-for-all, `[0, 0, 1]` is two against one. Allies never shoot each other's troops and can't attack each other.
 - A castle at 0 health has fallen. That player's troops disband and their buildings become grey ruins: still walls, so routes don't suddenly change, but they do nothing. The player can watch the rest of the match.
 - A team loses when all its castles have fallen; the last team standing wins.
 - Every standing castle must keep a route to every standing enemy castle; a build that would cut one is refused.

@@ -8,7 +8,7 @@ updated: 2026-11-28
 # Inhabited regions
 Every region is somebody's home before it is the player's battlefield. Develop everyday life, food, travel, architecture, trade, traditions, grievances, ecological needs and political relationships before designing combat. Territories and habitats may overlap.
 ## Drowned Woods
-Flooded woodland with submerged human roads and fields; amphibious settlements, spawning grounds and trade routes now depend on water. Human claims to ancestral farmland conflict with existing homes. Rising water may genuinely threaten both.
+Flooded woodland with submerged human roads and fields; amphibious settlements, spawning grounds and trade routes now depend on water. Human claims to ancestral farmland conflict with existing homes. Rising water may genuinely threaten both. Developed further in [Drowned Woods](locations/drowned-woods.md).
 ## Sporefields
 Fungal networks, dead timber and fertile soil. Possible goblin communities cultivate medicines, fermentation and rare materials. Outsiders may mistake managed decay for disease; a genuine fungal threat could still exist.
 ## Endless Bloom

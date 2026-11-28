@@ -1,5 +1,7 @@
 {
   "name": "Rocky Pass",
+  "description": "Two castles face each other across an open field, with two small rock outcrops to build mazes around.",
+  "modes": ["duel"],
   "startingTowers": [
     {
       "player": 0,

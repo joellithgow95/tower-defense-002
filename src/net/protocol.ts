@@ -27,8 +27,8 @@ export type ClientMessage =
   | { t: 'name'; name: string }
   /** Take a seat (player number), or stand up with null to watch. Lobby only. */
   | { t: 'sit'; seat: number | null }
-  /** Host only, in the lobby. */
-  | { t: 'mode'; mode: Mode }
+  /** Host only, in the lobby: the map (its id in content/maps/) and the mode to play it as. */
+  | { t: 'setup'; map: string; mode: Mode }
   | { t: 'start' }
   /** Host only, after a match: everyone back to the lobby. */
   | { t: 'lobby' }
@@ -38,9 +38,12 @@ export type ClientMessage =
 
 export type ServerMessage =
   /** Who is in the room. Sent whenever it changes. */
-  | { t: 'room'; phase: 'lobby' | 'playing'; mode: Mode; seats: SeatView[]; watching: string[]; you: number | null; host: boolean }
-  /** A match began, or you (re)joined one: every action so far, and how far to simulate. */
-  | { t: 'start'; mode: Mode; seed: number; humans: boolean[]; actions: Stamped[]; upTo: number }
+  | { t: 'room'; phase: 'lobby' | 'playing'; map: string; mode: Mode; seats: SeatView[]; watching: string[]; you: number | null; host: boolean }
+  /**
+   * A match began, or you (re)joined one: every action so far, and how far to simulate.
+   * Every browser plays `map` as `mode`; the room's build check means they all have the same map files.
+   */
+  | { t: 'start'; map: string; mode: Mode; seed: number; humans: boolean[]; actions: Stamped[]; upTo: number }
   /** A turn closed: simulate up to `upTo`, applying these actions on their ticks. */
   | { t: 'turn'; upTo: number; actions: Stamped[] }
   | { t: 'desync'; tick: number }

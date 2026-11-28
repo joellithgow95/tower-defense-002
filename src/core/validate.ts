@@ -1,6 +1,10 @@
 /** Plain-English checks for the files in content/, so a typo says what to fix. */
+import { MAP_ID, isMode, modes } from './config';
 import { MAX_PLAYERS, castleCells } from './sim';
-import type { Config } from './types';
+import type { Config, MapDef } from './types';
+
+/** Where a map's mistakes are reported: its file if it has one, otherwise its name. */
+const mapWhere = (map: MapDef) => (map.id ? `content/maps/${map.id}.json` : `map "${map.name}"`);
 
 export function problems({ content, map, rules, teams }: Config): string[] {
   const out: string[] = [];
@@ -30,7 +34,7 @@ export function problems({ content, map, rules, teams }: Config): string[] {
     out.push(`content/rules.json: "castleNoBuildRadius" must be a whole number, 0 or more (it is ${JSON.stringify(rules.castleNoBuildRadius)}). Use 0 to turn it off.`);
   }
 
-  const where = `map "${map.name}"`;
+  const where = mapWhere(map);
   const width = map.rows[0]?.length ?? 0;
   if (!width || map.rows.some((r) => r.length !== width)) out.push(`${where}: every row must be the same length.`);
   const flat = map.rows.join('');
@@ -50,5 +54,32 @@ export function problems({ content, map, rules, teams }: Config): string[] {
     if (!content.towers[t.id]) out.push(`${where}: there is no tower called "${t.id}".`);
     if (map.rows[t.y]?.[t.x] !== '.') out.push(`${where}: the starting ${t.id} at x ${t.x}, y ${t.y} must be on grass.`);
   }
+  return out;
+}
+
+/** The checks a file in content/maps/ needs on top of `problems`: its file name, name, description and modes. */
+export function mapProblems(map: MapDef): string[] {
+  const out: string[] = [];
+  const where = mapWhere(map);
+  if (!MAP_ID.test(map.id ?? '')) {
+    out.push(`${where}: name the file with lowercase letters, numbers and dashes only, like "drowned-woods.json".`);
+  }
+  if (typeof map.name !== 'string' || !map.name.trim()) out.push(`${where}: give it a "name", the name players see.`);
+  if (typeof map.description !== 'string' || !map.description.trim()) {
+    out.push(`${where}: give it a "description", a sentence or two players see when choosing a map.`);
+  }
+  const castles = castleCells(map.rows ?? []).length;
+  const list = Object.entries(modes).map(([id, m]) => `"${id}" (${m.label})`).join(', ');
+  if (!Array.isArray(map.modes) || !map.modes.length) {
+    out.push(`${where}: list the game modes it can be played as in "modes", e.g. ["duel"]. The modes are ${list}.`);
+    return out;
+  }
+  for (const id of map.modes) {
+    if (!isMode(id)) out.push(`${where}: there is no game mode called ${JSON.stringify(id)}. The modes are ${list}.`);
+    else if (modes[id].teams.length !== castles) {
+      out.push(`${where}: "${id}" (${modes[id].label}) needs ${modes[id].teams.length} castles, but this map has ${castles}.`);
+    }
+  }
+  if (new Set(map.modes).size !== map.modes.length) out.push(`${where}: a mode is listed twice in "modes".`);
   return out;
 }
