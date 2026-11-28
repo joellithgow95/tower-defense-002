@@ -38,6 +38,24 @@ describe('building', () => {
     expect(s.towers).toHaveLength(1);
     expect(s.gold[0]).toBe(40);
   });
+  it('lets you build where troops are walking, and they go round', () => {
+    const s = createMatch(quiet);
+    const at = (x: number, y: number) => y * s.width + x;
+    s.troops.push({ uid: 999, id: 'soldier', team: 1, hp: 10, from: at(3, 5), to: at(2, 5), progress: CELL / 2 });
+    step(s, quiet, [{ type: 'build', team: 0, tower: 'archer', x: 2, y: 5 }]);
+    expect(s.towers).toHaveLength(1);
+    for (let i = 0; i < 120; i++) {
+      step(s, quiet);
+      const troop = s.troops.find((t) => t.uid === 999);
+      if (troop) expect(troop.to).not.toBe(at(2, 5));
+    }
+  });
+  it('will not build in front of a troop that has just left its building', () => {
+    const s = createMatch(cfg);
+    const at = (x: number, y: number) => y * s.width + x;
+    s.troops.push({ uid: 999, id: 'soldier', team: 0, hp: 10, from: at(2, 4), to: at(3, 4), progress: 0 });
+    expect(checkBuild(s, cfg, 0, 'archer', 3, 4)).toBe('occupied');
+  });
   it('refuses to seal the only route', () => {
     const s = createMatch(corridor);
     expect(checkBuild(s, corridor, 0, 'archer', 2, 1)).toBe('blocks-route');

@@ -57,7 +57,9 @@ export function checkBuild(s: State, cfg: Config, team: Team, id: string, x: num
   if (!inTerritory(s, cfg.rules, team, cell)) return 'not-your-land';
   if (nearEnemyCastle(s, cfg.rules, team, cell)) return 'near-enemy-castle';
   const blocked = blockedCells(s);
-  if (blocked[cell] || s.troops.some((t) => t.from === cell || t.to === cell)) return 'occupied';
+  if (blocked[cell]) return 'occupied';
+  // Troops in the way back off (see moveTroops), unless one has just stepped out of a building and has nowhere to go.
+  if (s.troops.some((t) => t.to === cell && blocked[t.from])) return 'occupied';
   if (s.gold[team] < def.cost) return 'no-gold';
 
   // Nobody may be walled in: both bases, every working spawner and every troop need a route.
@@ -68,7 +70,8 @@ export function checkBuild(s: State, cfg: Config, team: Team, id: string, x: num
   const spawners = s.towers.filter((t) => t.demolish === 0 && cfg.content.towers[t.id].kind === 'spawner').map((t) => ({ cell: t.cell, team: t.team }));
   if (def.kind === 'spawner') spawners.push({ cell, team });
   if (spawners.some((t) => !reaches(t.cell, other(t.team)))) return 'blocks-route';
-  if (s.troops.some((t) => !reaches(t.to, other(t.team)))) return 'blocks-route';
+  // A troop walking into the new building turns back to where it came from, so its route starts there.
+  if (s.troops.some((t) => !reaches(t.to === cell ? t.from : t.to, other(t.team)))) return 'blocks-route';
   return null;
 }
 
